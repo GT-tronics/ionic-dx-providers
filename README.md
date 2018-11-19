@@ -1,6 +1,9 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## R3
+* support spp provision in AT+PDL? command
+
 ## R2
 * changed AT+VL? to AT+VLQ= for QCC source to support multiple device AVRCP volume sync
 
