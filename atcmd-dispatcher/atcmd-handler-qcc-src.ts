@@ -806,6 +806,7 @@ export namespace ATCMDHDLQCCSRC
         displayName : string;
         addr : string;
         addrType : AddrType;
+        isSppProvisioned : boolean;
         isPhoneProvisioned : boolean;
         isMusicProvisioned : boolean;
         isPhoneConnected : ConnectState;
@@ -881,19 +882,27 @@ export namespace ATCMDHDLQCCSRC
                 var avrcpVol = +matchAry[6];
                 var avrcpSync = matchAry[7] == "0" ?false :true;
                 var remoteDevName = matchAry[8];
+                var isSppProvisioned : boolean = false;
                 var isPhoneProvisioned : boolean = false;
                 var isMusicProvisioned : boolean = false;                
                 var isPhoneConnected : ConnectState = ConnectState.NONE;
                 var isMusicConnected : ConnectState = ConnectState.NONE;
-    
-                if( provisionProfile & 0x1 )
-                {
-                    isPhoneProvisioned = true;
-                }
 
-                if( provisionProfile & 0xc )
+                if( provisionProfile & 0x10 )
                 {
-                    isMusicProvisioned = true;
+                    isSppProvisioned = true;
+                }
+                else
+                {
+                    if( provisionProfile & 0x1 )
+                    {
+                        isPhoneProvisioned = true;
+                    }
+    
+                    if( provisionProfile & 0xc )
+                    {
+                        isMusicProvisioned = true;
+                    }
                 }
 
                 // Determine call/phone connect status
@@ -934,6 +943,7 @@ export namespace ATCMDHDLQCCSRC
                     displayName : remoteDevName.length > 0 ?remoteDevName :addr, 
                     addr : addr, 
                     addrType : addrType,
+                    isSppProvisioned : isSppProvisioned,
                     isPhoneProvisioned : isPhoneProvisioned,
                     isMusicProvisioned : isMusicProvisioned,
                     isPhoneConnected : isPhoneConnected, 
