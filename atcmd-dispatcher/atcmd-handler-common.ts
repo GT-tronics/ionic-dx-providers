@@ -24,7 +24,7 @@ export namespace ATCMDHDLCOMMON
             super(uuid, name, sendCb, events);
 
             // Install parser speed filter 
-            this.installParserSpeedFilter("\\+[A-Z]+\\:.+");
+            this.installParserSpeedFilter("\\+[0-9A-Z]+\\:.+");
     
             this.seqId = 0;
             

@@ -28,6 +28,7 @@ export namespace ATCMDHDLQCCSRC
         public atCmdVLQ : AtCmdRec_VLQ;
         public atCmdPDLU : AtCmdRec_PDLU;
         public atCmdDCQ : AtCmdRec_DCQ;
+        public atCmdSCAN : AtCmdRec_SCAN;
 
         constructor(
             uuid : string, 
@@ -65,6 +66,10 @@ export namespace ATCMDHDLQCCSRC
             // AT+PDLU?
             this.atCmdPDLU = new AtCmdRec_PDLU(this.uuid, this.atCmdRspCallback.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdPDLU, false);
+
+            // AT+SCAN
+            this.atCmdSCAN = new AtCmdRec_SCAN(this.uuid, this.atCmdRspCallback_SCAN.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdSCAN, false);
         }
     
         //
@@ -81,7 +86,7 @@ export namespace ATCMDHDLQCCSRC
         //   +PDL:0,...
         //   +PDL:1,...
         //   ...
-        //   +PDL-1
+        //   +PDL:-1
         //
         private atCmdRspCallback_PDL( params ) 
         {
@@ -91,15 +96,47 @@ export namespace ATCMDHDLQCCSRC
                 //console.log("[" + params.cmdRsp + "] completed success: " + JSON.stringify(params));
                 this.atCmdPDL.cached = true;
                 this.atCmdPDL.resolve(params);
-                this.atCmdPDL.resolve = null;
             }
-            if( params.retCode < 0 && this.atCmdPDL.reject )
+            else if( params.retCode < 0 && this.atCmdPDL.reject )
             {
                 //console.log("[" + params.cmdRsp + "] completed failed: " + params.retCode);
                 this.atCmdPDL.reject(params);
-                this.atCmdPDL.reject = null;
             }
+            this.atCmdPDL.resolve = null;
+            this.atCmdPDL.reject = null;
         }
+
+        // Special Callback to handle SCAN unsolicted notification
+        // - the key issue is that "OK" is received before the return is available.
+        // - therefore, the return must be handled in this callback.
+        // - also event broadcast is suppressed.
+        // - command sequence example:
+        //   AT+SCAN (or AT+SCAN=<maxScan>,<timeout>)
+        //   OK            <== result received after OK (as unsolicted notification)
+        //   +SCAN:0,...
+        //   +SCAN:1,...
+        //   +SCAN:0,...
+        //   ...
+        //   +SCAN:-1
+        //
+        private atCmdRspCallback_SCAN( params ) 
+        {
+            this.atCmdSCAN.updateInProgress = false;
+            if( params.retCode == 0 && this.atCmdSCAN.resolve )
+            {
+                //console.log("[" + params.cmdRsp + "] completed success: " + JSON.stringify(params));
+                this.atCmdSCAN.cached = true;
+                this.atCmdSCAN.resolve(params);
+            }
+            else if( params.retCode < 0 && this.atCmdSCAN.reject )
+            {
+                //console.log("[" + params.cmdRsp + "] completed failed: " + params.retCode);
+                this.atCmdSCAN.reject(params);
+            }
+            this.atCmdSCAN.resolve = null;
+            this.atCmdSCAN.reject = null;
+    }
+
 
         //
         // Support Functions
@@ -223,9 +260,9 @@ export namespace ATCMDHDLQCCSRC
             });       
         }
 
-        public connectDevice( addr : string ) : Promise<any>
+        public connectPairedDevice( addr : string ) : Promise<any>
         {
-            console.log("[connectDevice] ...");
+            console.log("[connectPairedDevice] ...");
             var ret = this.findPdlIndexByAddress(addr);
             if( ret.idx < 0 )
             {
@@ -235,6 +272,20 @@ export namespace ATCMDHDLQCCSRC
             }
             
             var cmd = "AT+CN=1," + ret.idx;
+            return new Promise((resolve, reject) => {
+                this.sendCmd(cmd, this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                });
+            });  
+        }
+
+        public connectDevice( addr : string ) : Promise<any>
+        {
+            var cmd = "AT+CA=" + addr.replace(/\:/g, '');;
             return new Promise((resolve, reject) => {
                 this.sendCmd(cmd, this.seqId++).then( obj => {
                     console.log("[" + cmd + "] sent ok");
@@ -297,6 +348,67 @@ export namespace ATCMDHDLQCCSRC
             }
 
             return false;
+        }
+
+        public startScan(enableInterimResultReporting : boolean = false) : Promise<any>
+        {
+            console.log("[startScan] ...");
+            if( this.atCmdSCAN.updateInProgress )
+            {
+                var cmd = this.atCmdSCAN.cmd;
+                return new Promise( (resolve, reject) => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"sanning in progress"});
+                });
+            }
+
+            this.atCmdSCAN.cached = false;
+            this.atCmdSCAN.updateInProgress = true;
+            this.atCmdSCAN.refreshScan = true;
+            this.atCmdSCAN.enableInterimResultReporting = enableInterimResultReporting;
+
+            var cmd = this.atCmdSCAN.cmd;
+            return new Promise((resolve, reject) => {
+                this.atCmdSCAN.resolve = resolve;
+                this.atCmdSCAN.reject = reject;
+                this.atCmdRefresh(cmd).then( obj => {
+                    //console.log("[" + cmd + "] sent ok");
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                    this.atCmdSCAN.updateInProgress = false;
+                    this.atCmdSCAN.resolve = null;
+                    this.atCmdSCAN.reject = null;
+                });
+            });     
+        }
+
+        public cancelScan() : Promise<any>
+        {
+            console.log("[cancelScan] ...");
+            if( !this.atCmdSCAN.updateInProgress )
+            {
+                var cmd = this.atCmdSCAN.cmd;
+                return new Promise( (resolve, reject) => {
+                    console.log("[" + cmd + "=0] sent failed");
+                    reject({"retCode":-1,"status":"sanning not in progress"});
+                });
+            }
+
+            this.atCmdSCAN.updateInProgress = false;
+
+            var cmd = this.atCmdSCAN.cmd + '=0';
+            return new Promise((resolve, reject) => {
+                this.atCmdSCAN.resolve = null;
+                this.atCmdSCAN.reject = null;
+                this.sendCmd(cmd, this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                });
+            });    
         }
 
         //
@@ -1311,6 +1423,143 @@ export namespace ATCMDHDLQCCSRC
 
             // Always put this to last
             super.match(matchAry);
+        }
+    }
+
+    export interface ScanRec 
+    {
+        rank : number;
+        displayName : string;
+        addr : string;
+        isProfileComplete : boolean;
+        isA2dp : boolean;
+        isHfp : boolean;
+        isAvrcp : boolean;
+        pathLoss : number;
+        remoteDevName : string;
+    }
+
+    export interface ScanRecs extends Map<ScanRec>
+    {
+
+    }
+
+    interface ScanRecsMap extends Map<ScanRecs>
+    {
+    }
+
+    //
+    // AT+SCAN AT-CMD Record
+    //
+
+    export class AtCmdRec_SCAN extends ATCMDHDL.AtCmdRec 
+    {
+        static gCnt = 0;
+
+        public scanRecsMap : ScanRecsMap;
+        public updateInProgress : boolean;
+        public refreshScan : boolean;
+        public enableInterimResultReporting : boolean;
+
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+SCAN', "\\+SCAN\\:(-?[0-9]+)(?:,(.+),([0-9]+),([0-9]+),([0-9]+),(.*))?", cb, events);
+            this.scanRecsMap = <ScanRecsMap>{};
+            this.refreshScan = false;
+            this.enableInterimResultReporting = false;
+        }
+
+        match(matchAry : any[]) 
+        {
+            var rank = +matchAry[1];
+            var scanRec : ScanRec;
+
+            //console.log("[AtCmdRec_SCAN] match: " + matchAry[0]);
+
+            if( this.refreshScan )
+            {
+                this.refreshScan = false;
+                AtCmdRec_PDL.gCnt++;
+            }
+
+            if( rank == -1 )
+            {
+
+                // Last one received
+                // - clear the previous map record.
+                if( this.scanRecsMap[AtCmdRec_SCAN.gCnt-1])
+                {
+                    delete this.scanRecsMap[AtCmdRec_SCAN.gCnt-1];
+                }
+
+                if( this.scanRecsMap[AtCmdRec_SCAN.gCnt] == null )
+                {
+                    this.params = { "scanRecs" : { "empty" : {"addr":"","remoteDevName":"empty"} } };
+                }
+                else
+                {
+                    this.params = { "scanRecs" : this.scanRecsMap[AtCmdRec_SCAN.gCnt] };
+                }
+                this.params['seqid'] = this.seqId;
+                this.params['uuid'] = this.uuid;
+                this.params['cmdRsp'] = "+SCAN:";
+                this.params['retCode'] = 0;
+                this.params['status'] = "success";
+
+                //console.log(this.params);
+
+                // Notify
+                super.match(matchAry);
+                return;
+            }
+
+            var addr = matchAry[2];
+            var profiles = +matchAry[3];
+            var isProfileComplete = matchAry[4] == "0" ?false :true;
+            var pathLoss = +matchAry[5];
+            var remoteDevName = matchAry[6];
+            var isA2dp : boolean = (profiles & 0x1) > 0 ?true :false;
+            var isHfp : boolean = (profiles & 0x2) > 0 ?true :false;
+            var isAvrcp : boolean = (profiles & 0x3) > 0 ?true :false;
+            
+            scanRec = 
+            { 
+                rank : rank,
+                displayName : remoteDevName.length > 0 ?remoteDevName :addr, 
+                addr : addr, 
+                isProfileComplete : isProfileComplete,
+                isA2dp : isA2dp,
+                isHfp : isHfp,
+                isAvrcp : isAvrcp,
+                pathLoss : pathLoss,
+                remoteDevName : remoteDevName,
+            };
+            
+            // Send interim scan result
+            if( this.enableInterimResultReporting )
+            {
+                if( this.events != null )
+                {
+                    setTimeout(() => {
+                        this.events.publish("QCC_SRC_NEW_SCAN_RESULT", {"scanRec" : scanRec});
+                    }, 0);
+                }
+            }
+
+            var seqId = AtCmdRec_SCAN.gCnt;
+            var scanRecs : ScanRecs = this.scanRecsMap[seqId];
+
+            if( !scanRecs )
+            {
+                scanRecs = <ScanRecs>{};
+                this.scanRecsMap[seqId] = scanRecs;
+            }
+            
+            scanRecs[scanRec.addr] = scanRec;
         }
     }
 

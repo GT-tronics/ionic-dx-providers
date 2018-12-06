@@ -1,6 +1,10 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## R4
+* support AT+SCAN commad for QCC_SRC
+* fixed the speed filter to include numeric characters
+
 ## R3
 * support spp provision in AT+PDL? command
 

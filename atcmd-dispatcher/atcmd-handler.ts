@@ -497,7 +497,7 @@ export namespace ATCMDHDL
         public eventId : string;
 
         public handler : AtCmdHandler;
-        private events : Events;
+        protected events : Events;
 
         public resolve : ( (obj) => void);
         public reject : ( (obj) => void);
