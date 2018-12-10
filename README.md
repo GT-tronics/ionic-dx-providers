@@ -1,6 +1,10 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## R5
+* improved the connect speed (by 2s) for classic SPP
+* improved the robustness of the null AT command handler when handling AT+NM? command
+
 ## R4
 * support AT+SCAN commad for QCC_SRC
 * fixed the speed filter to include numeric characters

@@ -8,8 +8,6 @@ export namespace ATCMDHDLNULL
 
         public atCmdNM : AtCmdRec_NM;
 
-        private dxDiscovering : boolean;
-        private discoveringTimeout : any;
         private upgradeCb : (uuid:string, className:string) => void;
 
         constructor(
@@ -21,36 +19,46 @@ export namespace ATCMDHDLNULL
         ) 
         {
             super(uuid, name, sendCb, events);
-            this.dxDiscovering = true;
             this.upgradeCb = upgradeCb;
 
             // AT+VS?
             // - this is the 1st command to be sent
-            this.atCmdNM = new AtCmdRec_NM(this.uuid, this.atCmdRspCallback_NM.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdNM, true);
+            // - don't refresh by default
+            this.atCmdNM = new AtCmdRec_NM(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdNM, false);
 
-            // If for some reason there is no response,
-            // - it will be permanently null device
-            // - null device will straightly notify client and pass the raw data
-            this.discoveringTimeout = setTimeout(() => {
-                console.log('[' + this.name + '] DX discovering failed, keep this null handler');
-                // Discovering failed
-                // - keep it as null
-                this.dxDiscovering = false;
-                this.discoveringTimeout = null;
-            }, 10000);
+            // Send the NM command here
+            // - try to send the 2nd time after not receiving OK for 5s (determined in ATCMDHDL.sendCmdInternal)
+            this.sendCmd(this.atCmdNM.cmd, this.atCmdNM.seqId++).then( ret => {
+                // Sent is ok. Do nothing just let atCmdRspCallback_NM to handle the rest
+                console.log('[' + this.name + '] sent AT+NM? ok');
+                this.readyToLaunchTheNewHandler();
+            }).catch( obj => {
+                // Send the 2nd time
+                console.log('[' + this.name + '] sending AT+NM? the 2nd time ...');
+                this.sendCmd(this.atCmdNM.cmd, this.atCmdNM.seqId++).then( ret => {
+                    // Resent is ok. Do nothing just let atCmdRspCallback_NM to handle the rest
+                    console.log('[' + this.name + '] sent AT+NM? ok (2nd time)');
+                    this.readyToLaunchTheNewHandler();
+                }).catch( obj => {
+                    // If for some reason there is no response,
+                    // - it will be permanently null device
+                    // - null device will straightly notify client and pass the raw data
+                    console.log('[' + this.name + '] DX discovering failed, keep this null handler');
+                });
+            });
         }
 
-        atCmdRspCallback_NM()
+        private readyToLaunchTheNewHandler()
         {
             console.log('[' + this.name + '] upgrading handler ...');
-            if( this.upgradeCb(this.uuid, this.atCmdNM.className) )
+            if( !this.upgradeCb(this.uuid, this.atCmdNM.className) )
             {
-                clearTimeout(this.discoveringTimeout);
-                this.discoveringTimeout = null;
-                this.dxDiscovering = false;
+                console.log('[' + this.name + '] upgrading handler not successful [check codding]');
+                // FIXME: this should be coding error. Should raise exception here.
             }
         }
+
     }
 
     export class AtCmdRec_NM extends ATCMDHDL.AtCmdRec 

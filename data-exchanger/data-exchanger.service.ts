@@ -244,15 +244,21 @@ export class DataExchangerService {
                         this.onDisconnected();
                     }
 
+                    // mleung 20181210
+                    // - no need to wait for 2s since this doesn't apply classic SPP
+                    
                     // Delay the callback (to declare ready)
                     // - FIXME: this is a design bug in DX library this it prematurely declare ready
                     //   right after all LE characteristics are discovered. Rather, it should wait
                     //   for all notifications (rx, rx2, txc) enabled before declaring ready.
                     // - as a workaround, we will delay the callback response by 2s. 
-                    this.readyDelayTimeout = setTimeout(() => {
-                        typeof success(obj) !== 'undefined' && success(obj);
-                        this.readyDelayTimeout = null;
-                    }, 2000);
+                    // this.readyDelayTimeout = setTimeout(() => {
+                    //     typeof success(obj) !== 'undefined' && success(obj);
+                    //     this.readyDelayTimeout = null;
+                    // }, 2000);
+
+                    typeof success(obj) !== 'undefined' && success(obj);
+
                 }.bind(this),
                 function(obj) {
                     //failure
