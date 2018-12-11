@@ -1,6 +1,9 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## R6 
+* added WebGL BabylonJS
+
 ## R5
 * improved the connect speed (by 2s) for classic SPP
 * improved the robustness of the null AT command handler when handling AT+NM? command
