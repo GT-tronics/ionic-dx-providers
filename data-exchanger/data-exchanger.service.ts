@@ -28,6 +28,8 @@ export class DataExchangerService {
     receiveDataForceStopTime: any;
     readyDelayTimeout : any;
 
+    isSpp : boolean = false;
+
     errorUnsupported = {};
 
     constructor(
@@ -107,6 +109,10 @@ export class DataExchangerService {
                             // console.log('[DX] BT init success');
                             if(obj.state == 'init') {
                                 console.log('[DX] init success');
+                                if( obj.isSpp )
+                                {
+                                    this.isSpp = obj.isSpp;
+                                }
                                 resolve(obj);
                             } else if(obj.state == 'syson' || obj.state == 'sysoff') {
                                 console.log('[DX] Event: ' + obj.state);
@@ -244,20 +250,25 @@ export class DataExchangerService {
                         this.onDisconnected();
                     }
 
-                    // mleung 20181210
-                    // - no need to wait for 2s since this doesn't apply classic SPP
-                    
                     // Delay the callback (to declare ready)
                     // - FIXME: this is a design bug in DX library this it prematurely declare ready
                     //   right after all LE characteristics are discovered. Rather, it should wait
                     //   for all notifications (rx, rx2, txc) enabled before declaring ready.
                     // - as a workaround, we will delay the callback response by 2s. 
-                    // this.readyDelayTimeout = setTimeout(() => {
-                    //     typeof success(obj) !== 'undefined' && success(obj);
-                    //     this.readyDelayTimeout = null;
-                    // }, 2000);
 
-                    typeof success(obj) !== 'undefined' && success(obj);
+                    // mleung 20181210
+                    // - can bypass the 2s waiting for classic SPP
+                    if( this.isSpp )
+                    {
+                        typeof success(obj) !== 'undefined' && success(obj);    
+                    }
+                    else
+                    {
+                        this.readyDelayTimeout = setTimeout(() => {
+                            typeof success(obj) !== 'undefined' && success(obj);
+                            this.readyDelayTimeout = null;
+                        }, 2000);
+                    }
 
                 }.bind(this),
                 function(obj) {
