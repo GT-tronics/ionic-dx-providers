@@ -1,6 +1,9 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## R7
+* added support functions for HFP for QCC SRC
+
 ## R6 
 * added WebGL BabylonJS
 

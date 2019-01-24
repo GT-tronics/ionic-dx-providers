@@ -577,7 +577,51 @@ export namespace ATCMDHDLQCCSRC
             });       
         }
 
-        
+        public setSbcMaxBitPoolSize( bitPoolSz : number ) : Promise<any>
+        {
+            var cmd = "AT+DCS=9," + bitPoolSz;
+            return new Promise((resolve, reject) => {
+                this.sendCmd(cmd, this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    this.atCmdDCQ.sbcMaxBitPoolSz = bitPoolSz;
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });       
+        }
+
+        public setForceA2dpProfile( onOff : boolean ) : Promise<any>
+        {
+            var cmd = "AT+DCS=11," + (onOff ?"1" :"0");
+            return new Promise((resolve, reject) => {
+                this.sendCmd(cmd, this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    this.atCmdDCQ.forceA2dpProfile = onOff;
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });       
+        }
+
+        public setEnableHfpA2dpSwitchingViaButton( onOff : boolean ) : Promise<any>
+        {
+            var cmd = "AT+DCS=10," + (onOff ?"1" :"0");
+            return new Promise((resolve, reject) => {
+                this.sendCmd(cmd, this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    this.atCmdDCQ.enableHfpA2dpSwitchingViaButton = onOff;
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });       
+        }
+
         //
         // Getters
         //
@@ -900,6 +944,69 @@ export namespace ATCMDHDLQCCSRC
                 this.atCmdRefresh(cmd).then( obj => {
                     console.log("[" + cmd + "] sent ok");
                     resolve(this.atCmdDCQ.enableHfp);
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });
+        }
+
+        public getSbcMaxBitPoolSize(cache : boolean = true) : Promise<any>
+        {
+            if( cache && this.atCmdDCQ.sbcMaxBitPoolSzCached )
+            {
+                return new Promise ((resolve, reject) => {
+                    resolve(this.atCmdDCQ.sbcMaxBitPoolSz);
+                });
+            }
+
+            var cmd = this.atCmdDCQ.cmd + "9";
+            return new Promise((resolve, reject) => {
+                this.atCmdRefresh(cmd).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve(this.atCmdDCQ.sbcMaxBitPoolSz);
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });
+        }
+
+        public getForceA2dpProfile(cache : boolean = true) : Promise<any>
+        {
+            if( cache && this.atCmdDCQ.forceA2dpProfileCached )
+            {
+                return new Promise ((resolve, reject) => {
+                    resolve(this.atCmdDCQ.forceA2dpProfile);
+                });
+            }
+
+            var cmd = this.atCmdDCQ.cmd + "11";
+            return new Promise((resolve, reject) => {
+                this.atCmdRefresh(cmd).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve(this.atCmdDCQ.forceA2dpProfile);
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });
+        }
+
+        public getEnableHfpA2dpSwitchingViaButton(cache : boolean = true) : Promise<any>
+        {
+            if( cache && this.atCmdDCQ.enableHfpA2dpSwitchingViaButtonCached )
+            {
+                return new Promise ((resolve, reject) => {
+                    resolve(this.atCmdDCQ.enableHfpA2dpSwitchingViaButton);
+                });
+            }
+
+            var cmd = this.atCmdDCQ.cmd + "10";
+            return new Promise((resolve, reject) => {
+                this.atCmdRefresh(cmd).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve(this.atCmdDCQ.enableHfpA2dpSwitchingViaButton);
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
                     reject({"retCode":-1,"status":"timeout expired"});
@@ -1330,6 +1437,9 @@ export namespace ATCMDHDLQCCSRC
         public enableRoleMismatchReconnectMedia : boolean;
         public enablePktSzMismatchReconnectMedia : boolean;
         public enableHfp : boolean;
+        public forceA2dpProfile : boolean;
+        public enableHfpA2dpSwitchingViaButton : boolean;
+        public sbcMaxBitPoolSz : number;
 
         public enableDualStreamCached : boolean = false;
         public autoReconnect2ndDeviceCached : boolean = false;
@@ -1338,6 +1448,9 @@ export namespace ATCMDHDLQCCSRC
         public enableRoleMismatchReconnectMediaCached : boolean = false;
         public enablePktSzMismatchReconnectMediaCached : boolean = false;
         public enableHfpCached : boolean = false;
+        public forceA2dpProfileCached : boolean;
+        public enableHfpA2dpSwitchingViaButtonCached : boolean;
+        public sbcMaxBitPoolSzCached : boolean;
 
         constructor(
             uuid : string,
@@ -1402,6 +1515,27 @@ export namespace ATCMDHDLQCCSRC
                     this.enableHfp = +matchAry[2] == 0 ?false :true;
                     this.enableHfpCached = true;
                     val = this.enableHfp;
+                    break;
+                }
+                case 9: // SBC Max Bitpool Size
+                {
+                    this.sbcMaxBitPoolSz = +matchAry[2];
+                    this.sbcMaxBitPoolSzCached = true;
+                    val = this.sbcMaxBitPoolSz;
+                    break;
+                }
+                case 10: // Enable HFP A2DP Switching Via Button
+                {
+                    this.enableHfpA2dpSwitchingViaButton = +matchAry[2] == 0 ?false :true;
+                    this.enableHfpA2dpSwitchingViaButtonCached = true;
+                    val = this.enableHfpA2dpSwitchingViaButton;
+                    break;
+                }
+                case 11: // Force A2DP Profile
+                {
+                    this.forceA2dpProfile = +matchAry[2] == 0 ?false :true;
+                    this.forceA2dpProfileCached = true;
+                    val = this.forceA2dpProfile;
                     break;
                 }
                 default:
