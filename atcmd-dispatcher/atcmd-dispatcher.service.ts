@@ -10,6 +10,7 @@ import { ATCMDHDLQCCSNK } from '../../providers/atcmd-dispatcher/atcmd-handler-q
 import { ATCMDHDLQCCSRC } from '../../providers/atcmd-dispatcher/atcmd-handler-qcc-src';
 import { ATCMDHDLDXS } from '../../providers/atcmd-dispatcher/atcmd-handler-dxs';
 import { ATCMDHDLWIFI8266 } from '../../providers/atcmd-dispatcher/atcmd-handler-wifi-8266';
+import { ATCMDHDLIMU } from '../../providers/atcmd-dispatcher/atcmd-handler-imu';
 
 declare var cordova: any;
 
@@ -137,6 +138,7 @@ export class AtCmdDispatcherService {
         ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SRC', ATCMDHDLQCCSRC.AtCmdHandler_QCC_SRC.createInstance);
         ATCMDHDL.AtCmdHandler.registerSubClass('DXS', ATCMDHDLDXS.AtCmdHandler_DXS.createInstance);
         ATCMDHDL.AtCmdHandler.registerSubClass('WFI', ATCMDHDLWIFI8266.AtCmdHandler_WIFI_8266.createInstance);
+        ATCMDHDL.AtCmdHandler.registerSubClass('IMU', ATCMDHDLIMU.AtCmdHandler_IMU.createInstance);
     }
 
     //

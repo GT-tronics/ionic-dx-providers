@@ -273,7 +273,15 @@ export namespace ATCMDHDL
                         this.huntForOkTimeout = null;
     
                         var rec : CmdQRec = this.sendQ.shift();
-                        rec.resolve({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
+                        if( retCode > 0 )
+                        {
+                            rec.reject({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
+
+                        }
+                        else
+                        {
+                            rec.resolve({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : 0, "status" : this.atCmdErrCodeStr[0]});
+                        }
                         if( this.sendQ.length > 0 )
                         {
                             setTimeout(() => {

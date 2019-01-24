@@ -1,6 +1,11 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## IMU R1
+* branched from Master R6
+* added IMU supported
+* minor fix in atcmd-handler.ts (that can propergate to Master)
+
 ## R6 
 * added WebGL BabylonJS
 
