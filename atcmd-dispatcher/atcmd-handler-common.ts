@@ -30,8 +30,8 @@ export namespace ATCMDHDLCOMMON
             
             // AT+VS?
             // - this is the 1st command to be sent
-            this.atCmdVSQ = new AtCmdRec_VSQ(this.uuid, this.atCmdRspCallback_VS.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdVSQ, true);
+            this.atCmdVSQ = new AtCmdRec_VSQ(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdVSQ, false);
 
             // AT+EC?
             // - don't bother to refresh because it will be set right away
@@ -40,15 +40,17 @@ export namespace ATCMDHDLCOMMON
 
             // Set echo off (AT+EC=0)
             // - this is the 2nd command to be sent
-            this.setEcho(false);
-        }
-
-        //
-        // Release all other AT command for processing
-        //
-        atCmdRspCallback_VS( params )
-        {
-            this.setSendReady();
+            this.setEcho(false).then( obj => {
+                var cmd = this.atCmdVSQ.cmd
+                this.sendCmdAtInitStage(cmd, this.atCmdVSQ.seqId++).then( ret => {
+                    // Release all other AT command for processing
+                    console.log("[" + cmd + "] sent ok");
+                    this.setSendReady();
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                });
+            }).catch( obj => {
+            });
         }
 
         //
@@ -58,7 +60,7 @@ export namespace ATCMDHDLCOMMON
         {
             var cmd = "AT+EC=" + (on ?1 :0);
             return new Promise((resolve, reject) => {
-                this.sendCmd(cmd, this.seqId++).then( params => {
+                this.sendCmdAtInitStage(cmd, this.seqId++).then( params => {
                     console.log("[" + cmd + "] sent ok");
                     this.atCmdEC.echo = on;
                     resolve({"retCode":0,"status":"success"});

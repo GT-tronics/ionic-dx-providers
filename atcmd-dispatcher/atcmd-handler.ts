@@ -115,7 +115,8 @@ export namespace ATCMDHDL
         private unrecognizedLines : string[];
         private sendQ : CmdQRec[];
         private ready : boolean;
-        private initReady : boolean;
+        private initStage : boolean;
+        private initSending : boolean;
         private huntForOk : boolean;
         private huntForOkTimeout : any;
         private parserSpeedFilter : string;
@@ -173,6 +174,8 @@ export namespace ATCMDHDL
             206 : "ERR_DEVICE_NOT_CONNECTED",   
             207 : "ERR_INCORRECT_TIMER_VALUE",
             208 : "ERR_INVALID_RSSI",
+            209 : "ERR_AUTH_FAILED",
+            210 : "ERR_SPP_LE_NOT_CONNECTED",
         };
 
         constructor(
@@ -187,7 +190,8 @@ export namespace ATCMDHDL
             this.unrecognizedLines = [];
             this.sendQ = [];
             this.ready = false;
-            this.initReady = true;
+            this.initStage = true;
+            this.initSending = false;
             this.huntForOk = false;
             this.huntForOkTimeout = null;
             this.parserSpeedFilter = null;
@@ -273,13 +277,22 @@ export namespace ATCMDHDL
                         this.huntForOkTimeout = null;
     
                         var rec : CmdQRec = this.sendQ.shift();
-                        rec.resolve({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
-                        if( this.sendQ.length > 0 )
+                        if( retCode != 0 )
+                        {
+                            rec.reject({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
+                        }
+                        else
+                        {
+                            rec.resolve({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
+                        }
+
+                        if( this.sendQ.length > 0 && this.ready)
                         {
                             setTimeout(() => {
                                 this.sendCmdInternal();
                             },0);
                         }
+                        this.initSending = false;
 
                         continue;
                     }
@@ -351,21 +364,45 @@ export namespace ATCMDHDL
             return this.sendCmd( cmd,  atCmdRec.seqId);
         }
 
-        // 
+        // Send AT-CMD @ init stage
+        // - use this to send AT commands @ init stage
+        //   - @ init stage, there is often a series of AT command which needs to be processed 
+        //     before any other commands. For example, a super class want to send a series of 
+        //     command before the commands from subclass. 
+        // - only one command can be sent at one time @ init stage
+        //
+        protected sendCmdAtInitStage( cmd : string, signature : number ) : Promise<any>
+        {
+            if( !this.initStage )
+            {
+                return this.sendCmd( cmd, signature );
+            }
+
+            return new Promise( (resolve, reject) => {
+                this.sendQ.unshift({cmd:cmd,signature:signature,resolve:resolve,reject:reject});
+                if( this.initSending )
+                {
+                    this.handleSendCmdFailure("busy");
+                }
+                else
+                {
+                    this.initSending = true;
+                    this.sendCmdInternal();
+                }
+            });
+        }
+
         // Send AT-CMD
-        // - always use this function to AT commands
+        // - always use this function to send AT commands
         // - it will buffer and pace the sending request
         //
         sendCmd( cmd : string, signature : number ) : Promise<any>
         {
             return new Promise( (resolve, reject) => {
                 this.sendQ.push({cmd:cmd,signature:signature,resolve:resolve,reject:reject});
-                //console.log("[sendCmd] Q size [" + this.sendQ.length + "] Ready [" + this.ready + "," + this.initReady +"]");
-                if( (this.ready || this.initReady) && this.sendQ.length == 1)
+                //console.log("[sendCmd] Q size [" + this.sendQ.length + "] Ready [" + this.ready + "," +"]");
+                if( this.ready && this.sendQ.length == 1)
                 {
-                    // Let the 1st AT-CMD goes
-                    this.initReady = false;
-
                     // There is only one item in queue, so go ahead to send the command
                     this.sendCmdInternal();
                 }
@@ -393,6 +430,19 @@ export namespace ATCMDHDL
         {
             var rec : CmdQRec = this.sendQ.shift();
             rec.reject({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -1, "status" : reason});
+            if( this.sendQ.length > 0 && this.ready )
+            {
+                setTimeout(() => {
+                    this.sendCmdInternal();
+                },0);
+            }
+            this.initSending = false;
+        }
+
+        protected setSendReady()
+        {
+            this.ready = true;
+            this.initStage = false;
             if( this.sendQ.length > 0 )
             {
                 setTimeout(() => {
@@ -401,9 +451,13 @@ export namespace ATCMDHDL
             }
         }
 
-        protected setSendReady()
+        protected resetSendQ()
         {
-            this.ready = true;
+            this.rxLines = [];
+            this.sendQ = [];
+            this.huntForOk = false;
+            clearTimeout(this.huntForOkTimeout);
+            this.huntForOkTimeout = null;
         }
 
         protected installParserSpeedFilter( filter : string )

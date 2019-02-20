@@ -25,6 +25,7 @@ export class BtDeviceInfo {
     public name : string;
     public customName : string;
     public rssi : number;
+    public pinCode : number;
     public active : boolean;
     //public connected : boolean;
     //public connecting : boolean;
@@ -43,6 +44,7 @@ export class BtDeviceInfo {
         this.customName = null;
         this.rssi = -127;
         this.active = false;
+        this.pinCode = 0xFFFF;
         //this.connecting = false;
         //this.connected = false;
         this.connectTimer = null;
@@ -462,6 +464,34 @@ export class AtCmdDispatcherService {
         this.scanSuccessCb(obj);
     }
 
+    private createAndRunNullHandlers(devInfo : BtDeviceInfo)
+    {
+        // Locate AT-CMD handler for command channel
+        // - notify connect
+        // - if new, create a null handler 1st
+        // - null handler will determine how to create the correct AT-CMD handler eventually
+        var cmdChHandler : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
+        if( !cmdChHandler )
+        {
+            cmdChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_CMD(devInfo.uuid, devInfo.pinCode, this.sendDxCmd.bind(this), this.upgradeCmdChHandler.bind(this), this.terminateConnection.bind(this), this.events, this.dx);
+            this.cmdChHandlerList[devInfo.uuid] = cmdChHandler
+        }
+        cmdChHandler.notifyConnected();
+
+        // // Locate AT-CMD handler for data channel
+        // // - notify connect
+        // // - if new, create a null handler 1st
+        // // - null handler will determine how to create the correct AT-CMD handler eventually
+        // var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
+        // if( !dataChHandler )
+        // {
+        //     dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this), this.events, this.dx);
+        //     this.dataChHandlerList[devInfo.uuid] = dataChHandler
+        // }
+
+        // dataChHandler.notifyConnected();
+    }
+
     connectSuccessCallback(obj) 
     {
         if( obj.state == 'connected' ) {
@@ -527,32 +557,24 @@ export class AtCmdDispatcherService {
             // Clear connect timer
             devInfo.clearConnectTimer();
 
-            // Locate AT-CMD handler for command channel
-            // - notify connect
-            // - if new, create a null handler 1st
-            // - null handler will determine how to create the correct AT-CMD handler eventually
-            var cmdChHandler : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
-            if( !cmdChHandler )
+            if( this.dx["enableSecurity"] )
             {
-                cmdChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_CMD(devInfo.uuid, this.sendDxCmd.bind(this), this.upgradeCmdChHandler.bind(this), this.events);
-                this.cmdChHandlerList[devInfo.uuid] = cmdChHandler
+                // Turn on security
+                this.dx["enableSecurity"](devInfo.uuid, true).then( ret => {
+                    this.createAndRunNullHandlers(devInfo);
+                }).catch( ret => {
+                    this.terminateConnection(devInfo.uuid, {"retCode":-1,"status":"security failed"});
+                });            
             }
-            cmdChHandler.notifyConnected();
-
-            // Locate AT-CMD handler for data channel
-            // - notify connect
-            // - if new, create a null handler 1st
-            // - null handler will determine how to create the correct AT-CMD handler eventually
-            var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
-            if( !dataChHandler )
+            else
             {
-                dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.events);
-                this.dataChHandlerList[devInfo.uuid] = dataChHandler
+                // Library doesn't support security
+                // - just create and run the NULL handlers
+                this.createAndRunNullHandlers(devInfo);
             }
-            dataChHandler.notifyConnected();
 
             // Notify the connect's promise that the device is now connected
-            devInfo.promiseResolve({"retCode":0,"status":"success"});
+            devInfo.promiseResolve({"retCode":0,"status":"success"});            
         }
         else if( obj.state == 'disconnected' ) {
             console.log("[Dispatcher] " + obj.info.UUID + " disconnected");
@@ -695,7 +717,7 @@ export class AtCmdDispatcherService {
         return this.dx.sendDxCmd(uuid, data);
     }
 
-    upgradeDataChHandler(uuid : string, className : string) 
+    private upgradeDataChHandler(uuid : string, className : string) : boolean
     {
         var devInfo = this.btDevLinkedList[uuid];
         if( !devInfo )
@@ -737,7 +759,7 @@ export class AtCmdDispatcherService {
         return true;
     }
 
-    upgradeCmdChHandler(uuid : string, className : string) 
+    private upgradeCmdChHandler(uuid : string, className : string) : boolean
     {
         var devInfo = this.btDevLinkedList[uuid];
         if( !devInfo )
@@ -777,6 +799,49 @@ export class AtCmdDispatcherService {
         this.cmdChHandlerList[uuid] = newHandler;
 
         return true;
+    }
+
+    private terminateConnection(uuid : string, info : any)
+    {
+        var devInfo : BtDeviceInfo;
+
+        devInfo = this.btDevLinkedList[uuid];
+        if( !devInfo ) {
+            // Device must be removed
+
+            // Double check if it is in the unlink list
+            // - shouldn't happen but just in case
+            // - clean up the state
+            devInfo = this.btDevUnlinkList[uuid];
+            // if( devInfo )
+            // {
+            //     //devInfo.connected = false;
+            //     //devInfo.connecting = false;
+            //     devInfo.state = DevState.IDLE;
+            //     devInfo.clearConnectTimer();
+            // }
+            if( !devInfo )
+            {
+                return;
+            }
+        }
+
+        var cmdH : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
+        var dataH : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
+
+        if( cmdH )
+        {
+            cmdH.info = info;
+        }
+
+        if( dataH )
+        {
+            dataH.info = info;
+        }
+
+        this.disconnect(uuid).then( obj => {
+        }).catch( obj => {
+        });
     }
 
     //

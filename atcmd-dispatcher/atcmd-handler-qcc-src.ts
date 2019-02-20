@@ -784,12 +784,25 @@ export namespace ATCMDHDLQCCSRC
                     });
                 }
             }
+            else
+            {
+                return new Promise ((resolve, reject) => {
+                    reject({"retCode":-2,"status":"incorrect pdl idx"});
+                });
+            }
 
             var cmd = this.atCmdVLQ.cmd + pdlIdx;
             return new Promise((resolve, reject) => {
                 this.atCmdRefresh(cmd).then( ret => {
                     console.log("[" + cmd + "] sent ok");
-                    resolve(ret.volume);
+                    if( pdlIdx == 0 )
+                    {
+                        resolve(this.atCmdVLQ.vol1);
+                    }
+                    else if( pdlIdx == 1 )
+                    {
+                        resolve(this.atCmdVLQ.vol2);
+                    }
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
                     reject({"retCode":-1,"status":"timeout expired"});

@@ -1,6 +1,12 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## R8
+* if null handlers fails to spawn the application handler, it will terminate the connection and notify disconnect rather than hanging
+* rewrote the common handler to use sendCmdAtInitStage() to send the initial commands before releasing other commands in the queue.
+* fixed minor bug in AtCmdHandler_QCC_SRC.getVolume()
+* added DX security support (just support no DX security) 
+
 ## R7
 * added support functions for HFP for QCC SRC
 
