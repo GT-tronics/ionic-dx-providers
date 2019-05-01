@@ -1,6 +1,9 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## V4 R4
+* removed babylon.js
+
 ## V4 R3
 * added page-params-passing services (copied from ionic-dx-providers-private ionic-v4 branch)
 
