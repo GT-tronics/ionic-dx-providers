@@ -1,10 +1,4 @@
-import { Inject, Injectable } from '@angular/core';
-import { Events } from 'ionic-angular';
-import 'rxjs/add/operator/toPromise';
-import { Platform } from 'ionic-angular';
-import { AtCmdDispatcherService } from '../../providers/atcmd-dispatcher/atcmd-dispatcher.service';
-import { ATCMDHDLQCCSNK } from '../../providers/atcmd-dispatcher/atcmd-handler-qcc-sink';
-import { ATCMDHDLQCCSRC } from '../../providers/atcmd-dispatcher/atcmd-handler-qcc-src';
+import { Events } from '@ionic/angular';
 
 export namespace ATCMDHDL 
 {
@@ -12,6 +6,180 @@ export namespace ATCMDHDL
     {
         timeStamp : Date;
         textLine : string;
+    }
+
+    class RxBuf 
+    {
+        private _buf : ArrayBuffer;
+        private _bytes : Uint8Array;
+        private _ofs : number;
+        private _sz : number;
+
+        private readonly _insertReserved = 100;
+        private readonly _minBufSz = 1000;
+
+        constructor() 
+        {
+            this._buf = new ArrayBuffer(this._minBufSz);
+            this._bytes = new Uint8Array(this._buf);
+            this._ofs = this._insertReserved;
+            this._sz = 0;
+        }
+
+        private appendPtr()
+        {
+            return this._ofs + this._sz;
+        }
+
+        private appendSize()
+        {
+            return this._buf.byteLength - this.appendPtr();
+        }
+
+        reset()
+        {
+            this._ofs = this._insertReserved;
+            this._sz = 0;
+        }
+
+        push( buf : ArrayBuffer | SharedArrayBuffer )
+        {
+            var bytes = new Uint8Array(buf);
+
+            if( buf.byteLength > this.appendSize() )
+            {
+                // Need a new buffer
+                var newSz = buf.byteLength + this._sz;
+                var newBufSz = (Math.round((newSz + this._minBufSz) / this._minBufSz) + 1) * this._minBufSz;
+
+                var newBuf = new ArrayBuffer(newBufSz);
+                var newBytes = new Uint8Array(newBuf);
+                var p = this._insertReserved;
+
+                for( var j = this._ofs, k = 0; k < this._sz; j++, k++ )
+                {
+                    newBytes[p++] = this._bytes[j];
+                }
+
+                this._buf = newBuf;
+                this._bytes = newBytes;
+                this._ofs = this._insertReserved;
+            }
+
+            for( var i = this.appendPtr(), j = 0; j < buf.byteLength; i++, j++ )
+            {
+                this._bytes[i] = bytes[j];
+            }
+            this._sz += buf.byteLength;
+        }
+
+        shiftOut( sz : number = this._minBufSz) : ArrayBuffer | SharedArrayBuffer
+        {
+            if( sz > this._sz )
+            {
+                sz = this._sz;
+            }
+
+            if( sz == 0 )
+            {
+                return new ArrayBuffer(0);
+            }
+
+            var slice = this._bytes.slice(this._ofs, this._ofs + sz);
+
+            this._ofs += sz;
+            return slice.buffer;
+        }
+
+        shiftIn( input : string | ArrayBuffer | SharedArrayBuffer )
+        {
+            var bytes : Uint8Array;
+            var buf : ArrayBuffer | SharedArrayBuffer;
+
+            if( typeof input == "string" )
+            {
+                bytes = new TextEncoder().encode(input);
+                buf = bytes.buffer;
+            }
+            else
+            {
+                buf = input;
+                bytes = new Uint8Array(buf);
+            }
+
+            if( buf.byteLength > this._ofs )
+            {
+                // Need new buffer
+                var newSz = buf.byteLength + this._sz;
+                var newBufSz = (Math.round((newSz + this._minBufSz) / this._minBufSz) + 1) * this._minBufSz;
+
+                var newBuf = new ArrayBuffer(newBufSz);
+                var newBytes = new Uint8Array(newBuf);
+                var p = this._insertReserved;
+
+                for( j = 0; j < buf.byteLength; j++ )
+                {
+                    newBytes[p++] = bytes[j];
+                }
+
+                for( var j = this._ofs, k = 0; k < this._sz; j++, k++ )
+                {
+                    newBytes[p++] = this._bytes[j];
+                }
+
+                this._buf = newBuf;
+                this._bytes = newBytes;
+                this._ofs = this._insertReserved;
+                this._sz = newSz;
+            }
+            else
+            {
+                this._ofs -= buf.byteLength;
+                this._sz += buf.byteLength;
+                for( j = this._ofs, k = 0; k < buf.byteLength; j++, k++ )
+                {
+                    this._bytes[j] = bytes[k];
+                }
+            }
+        }
+
+        splitLine() : ArrayBuffer[]
+        {
+            var ofs = this._ofs;
+            var bufs = [];
+            var lf = 10;
+            var cr = 13;
+
+            for( var i = ofs; i < this.appendPtr(); i++ )
+            {
+                if( this._bytes[i] != lf )
+                {
+                    continue;
+                }
+
+                var ofsIdx = i;
+
+                if( ofsIdx > 1 )
+                {
+                    if( this._bytes[ofsIdx-1] == cr )
+                    {
+                        ofsIdx--;
+                    }
+                }
+                bufs.push( this._bytes.slice(ofs, ofsIdx).buffer );
+                ofs = i + 1;
+            }
+
+            // Push the last segment
+            bufs.push( this._bytes.slice(ofs, this.appendPtr()).buffer );
+
+            return bufs;
+        }
+
+        utf8ToString() : string
+        {
+            return new TextDecoder().decode(this._bytes.slice(this._ofs, this.appendPtr()));
+        }
     }
 
     // ATCMD Handler
@@ -46,7 +214,7 @@ export namespace ATCMDHDL
         uuid : string;
         name : string;
         info : {};
-        rxBuf : any;
+        rxBuf : RxBuf;
         rxLines : string[];
         sendCb : (uuid:string, data:string) => Promise<any>;
         events :  Events;
@@ -61,7 +229,7 @@ export namespace ATCMDHDL
             this.uuid = uuid;
             this.name = name;
             this.info = {};
-            this.rxBuf = '';
+            this.rxBuf = new RxBuf();
             this.rxLines = [];
             this.sendCb = sendCb;
             this.events = events;
@@ -89,8 +257,8 @@ export namespace ATCMDHDL
             }        
         }
 
-        appendData(data:string) {
-            this.rxBuf += data;
+        appendData(data:ArrayBuffer) {
+            this.rxBuf.push(data);
         }
     }
 
@@ -100,6 +268,7 @@ export namespace ATCMDHDL
     export interface CmdQRec {
         cmd : string;
         signature : number;
+        sendTimeout : number;
         resolve : (obj) => void;
         reject : (obj) => void;
     }
@@ -222,21 +391,37 @@ export namespace ATCMDHDL
         // - find lines from rx buffer and match each registered command
         // - pace send commands by looking for OK/ERR for each sent command before sending next
         //
-        appendData(data:string) {
+        appendData(data:ArrayBuffer) {
+            // console.log("Before append");
+            // console.log(this.rxBuf.utf8ToString());
             super.appendData(data);
-            var datastrs = this.rxBuf.replace(/\n|\r\n/g, '\n').split('\n');
-            this.rxBuf = '';
+            // console.log("After append");
+            // console.log(this.rxBuf.utf8ToString());
 
-            for (var i = 0; i < datastrs.length; i++) {
-                var datastr = datastrs[i];
-                var next = i + 1 == datastrs.length ? null : datastrs[i];
-                if (next === null && datastr.length > 0) {
+            var dataBufs = this.rxBuf.splitLine();
+            // console.log("Data Buffers");
+            // for( var dataBuf of dataBufs )
+            // {
+            //     console.log(new TextDecoder().decode(dataBuf));
+            // }
+
+            this.rxBuf.reset();
+            
+            for (var i = 0; i < dataBufs.length; i++) {
+                var dataBuf = dataBufs[i];
+                var next = ((i + 1) == dataBufs.length) ? null : dataBufs[i];
+                if (next === null && dataBuf.byteLength > 0) {
                     // keep residue data in buffer until linefeed reached
                     // hope this no more incoming data during processing !!! 
-                    // console.log('[' + this.name + '] rx partial line: ' + datastr);
-                    this.rxBuf = datastr + this.rxBuf;
-                } else if (next !== null && next.length > 0) {
+                    // console.log('[' + this.name + '] rx partial line: ' + new TextDecoder().decode(dataBuf));
+                    // console.log("Before shift in");
+                    // console.log(this.rxBuf.utf8ToString());
+                    this.rxBuf.shiftIn(dataBuf);
+                    // console.log("After shift in");
+                    // console.log(this.rxBuf.utf8ToString());
+                } else if (next !== null && next.byteLength > 0) {
                     // process linefeed terminated data chunk
+                    var datastr = new TextDecoder().decode(dataBuf);
                     // console.log('[' + this.name + '] rx full line: ' + datastr);
                     this.rxLines.push(datastr);
                     if( this.enableLogging )
@@ -333,7 +518,7 @@ export namespace ATCMDHDL
         // Refresh a registered command
         // - only work for the standard query command with result received before OK response
         //   
-        atCmdRefresh(cmd : string) : Promise<any> 
+        atCmdRefresh(cmd : string, timeout = 5000) : Promise<any> 
         {
             var atCmdRec = this.cmdParsers[cmd];
             var key = cmd;
@@ -361,7 +546,7 @@ export namespace ATCMDHDL
 
             // Obtain an sequence id for this refresh
             atCmdRec.seqId = AtCmdHandler_TEXTBASE.gSeqId++;
-            return this.sendCmd( cmd,  atCmdRec.seqId);
+            return this.sendCmd( cmd,  atCmdRec.seqId, timeout);
         }
 
         // Send AT-CMD @ init stage
@@ -371,7 +556,7 @@ export namespace ATCMDHDL
         //     command before the commands from subclass. 
         // - only one command can be sent at one time @ init stage
         //
-        protected sendCmdAtInitStage( cmd : string, signature : number ) : Promise<any>
+        protected sendCmdAtInitStage( cmd : string, signature : number, sendTimeout : number = 5000 ) : Promise<any>
         {
             if( !this.initStage )
             {
@@ -379,13 +564,13 @@ export namespace ATCMDHDL
             }
 
             return new Promise( (resolve, reject) => {
-                this.sendQ.unshift({cmd:cmd,signature:signature,resolve:resolve,reject:reject});
                 if( this.initSending )
                 {
-                    this.handleSendCmdFailure("busy");
+                    this.handleSendCmdFailure(-1, "busy");
                 }
                 else
                 {
+                    this.sendQ.unshift({cmd:cmd,signature:signature,sendTimeout:sendTimeout,resolve:resolve,reject:reject});
                     this.initSending = true;
                     this.sendCmdInternal();
                 }
@@ -396,10 +581,10 @@ export namespace ATCMDHDL
         // - always use this function to send AT commands
         // - it will buffer and pace the sending request
         //
-        sendCmd( cmd : string, signature : number ) : Promise<any>
+        sendCmd( cmd : string, signature : number, sendTimeout : number = 5000 ) : Promise<any>
         {
             return new Promise( (resolve, reject) => {
-                this.sendQ.push({cmd:cmd,signature:signature,resolve:resolve,reject:reject});
+                this.sendQ.push({cmd:cmd,signature:signature,sendTimeout:sendTimeout,resolve:resolve,reject:reject});
                 //console.log("[sendCmd] Q size [" + this.sendQ.length + "] Ready [" + this.ready + "," +"]");
                 if( this.ready && this.sendQ.length == 1)
                 {
@@ -419,17 +604,17 @@ export namespace ATCMDHDL
                 this.huntForOkTimeout = setTimeout(() => {
                     this.huntForOk = false;
                     this.huntForOkTimeout = null;
-                    this.handleSendCmdFailure("timeout to sent");
-                }, 5000);
+                    this.handleSendCmdFailure(-400, "timeout to sent");
+                }, rec.sendTimeout);
             }).catch( (obj) => {
-                this.handleSendCmdFailure("failed to sent");
+                this.handleSendCmdFailure(-401, "failed to sent");
             });
         }
 
-        private handleSendCmdFailure(reason : string)
+        private handleSendCmdFailure(retCode : number, reason : string)
         {
             var rec : CmdQRec = this.sendQ.shift();
-            rec.reject({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -1, "status" : reason});
+            rec.reject({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : retCode, "status" : reason});
             if( this.sendQ.length > 0 && this.ready )
             {
                 setTimeout(() => {

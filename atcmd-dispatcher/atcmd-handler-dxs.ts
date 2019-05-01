@@ -1,4 +1,4 @@
-import { Events } from 'ionic-angular';
+import { Events } from '@ionic/angular';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
 

@@ -1,6 +1,10 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## V4 R1
+* branched from Master R8
+* merged with ionic-dx-providers-private
+
 ## R8
 * if null handlers fails to spawn the application handler, it will terminate the connection and notify disconnect rather than hanging
 * rewrote the common handler to use sendCmdAtInitStage() to send the initial commands before releasing other commands in the queue.

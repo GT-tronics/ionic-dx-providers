@@ -1,7 +1,5 @@
 import { Injectable } from "@angular/core";
-import { Events } from 'ionic-angular';
-import 'rxjs/add/operator/toPromise';
-import { Platform } from 'ionic-angular';
+import { Platform, Events } from '@ionic/angular';
 import { DataExchangerService } from '../../providers/data-exchanger/data-exchanger.service';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
@@ -10,8 +8,22 @@ import { ATCMDHDLQCCSNK } from '../../providers/atcmd-dispatcher/atcmd-handler-q
 import { ATCMDHDLQCCSRC } from '../../providers/atcmd-dispatcher/atcmd-handler-qcc-src';
 import { ATCMDHDLDXS } from '../../providers/atcmd-dispatcher/atcmd-handler-dxs';
 import { ATCMDHDLWIFI8266 } from '../../providers/atcmd-dispatcher/atcmd-handler-wifi-8266';
+import { promise } from 'protractor';
 
 declare var cordova: any;
+
+export interface GeneralInfo
+{
+    firmwareStatus : string;
+    firmwareStatusCode : number;
+    deviceId : string;
+    modelNo : string;
+    manufacturer : string;
+    swVer : string;
+    hwVer : string;
+    sysVer : string;
+    capability : string;
+}
 
 export enum DevState
 {
@@ -24,6 +36,8 @@ export class BtDeviceInfo {
     public uuid : string;
     public name : string;
     public customName : string;
+    public btClassicName : string;
+    public displayName : string;
     public rssi : number;
     public pinCode : number;
     public active : boolean;
@@ -36,11 +50,18 @@ export class BtDeviceInfo {
     public dxDiscoverTimer : any;
     public promiseResolve : any;
     public promiseReject : any;
+    public generalInfo : any;
+    public customInfo : any;
+
+    public dataChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
+    public cmdChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
 
     constructor()
     {
         this.uuid = '';
         this.name = '';
+        this.btClassicName = '';
+        this.displayName = '';
         this.customName = null;
         this.rssi = -127;
         this.active = false;
@@ -54,6 +75,12 @@ export class BtDeviceInfo {
         this.promiseResolve = null;
         this.promiseReject = null;
         this.state = DevState.IDLE;
+        this.generalInfo = 
+        {
+            dataCh: this.setDefaultGeneralInfo(),
+            cmdCh: this.setDefaultGeneralInfo(),
+        };
+        this.customInfo = null;
     }
 
     clearConnectTimer()
@@ -85,6 +112,107 @@ export class BtDeviceInfo {
     {
         return (this.state == DevState.CONNECTING);
     }
+
+    private getChannelRemoteDeviceGeneralInfo(handler : ATCMDHDLCOMMON.AtCmdHandler_COMMON) : GeneralInfo
+    {
+        if( !handler )
+        {
+            return null;            
+        }
+
+        var params : GeneralInfo = null;
+        var di = handler.getDeviceInfo();
+        var vi = handler.getVersionInfo();
+
+        if( di && vi )
+        {
+            params = 
+            {
+                deviceId: di.deviceId,
+                modelNo: di.modelNo,
+                manufacturer: di.manufacturer,
+                swVer: vi.swVer,
+                hwVer: vi.hwVer,
+                sysVer: vi.sysVer,
+                capability: vi.capability,
+                firmwareStatus: "Up-to-date",
+                firmwareStatusCode: 0,
+            };
+        }
+
+        return params;
+    }
+
+    updateDataChannelRemoteDeviceGeneralInfo()
+    {
+        console.log("[Diaptcher] update data channel general info");
+        if( this.generalInfo.dataCh.deviceId == "Unknown" )
+        {
+            var info = this.getChannelRemoteDeviceGeneralInfo(this.dataChHandler);
+            if( !info )
+            {
+                setTimeout( () => {
+                    this.updateDataChannelRemoteDeviceGeneralInfo();
+                }, 5000);
+                return;
+            }
+
+            if( !this.generalInfo )
+            {
+                this.generalInfo = {};
+            }
+            if( !this.generalInfo.dataCh )
+            {
+                this.generalInfo['dataCh'] = {};
+            }
+            this.generalInfo.dataCh = info;
+        }
+    }
+
+    updateCommandChannelRemoteDeviceGeneralInfo()
+    {
+        console.log("[Diaptcher] update cmd channel general info");
+        if( this.generalInfo.cmdCh.deviceId == "Unknown" )
+        {
+            var info = this.getChannelRemoteDeviceGeneralInfo(this.cmdChHandler);
+            if( !info )
+            {
+                setTimeout( () => {
+                    this.updateCommandChannelRemoteDeviceGeneralInfo();
+                }, 5000);
+                return;
+            }
+
+            if( !this.generalInfo )
+            {
+                this.generalInfo = {};
+            }
+            if( !this.generalInfo.cmdCh )
+            {
+                this.generalInfo['cmdCh'] = {};
+            }
+            this.generalInfo.cmdCh = info;
+        }
+    }
+
+    private setDefaultGeneralInfo() : any 
+    {
+      var generalInfo : GeneralInfo = 
+      {
+        firmwareStatus : 'Up-to-date',
+        firmwareStatusCode : 0,
+        deviceId : "Unknown",
+        modelNo : "Unknown",
+        manufacturer : "Unknown",
+        swVer : "Unknown",
+        hwVer : "Unknown",
+        sysVer : "Unknown",
+        capability : "Unknown",
+      };
+  
+      return generalInfo;
+    }
+  
 }
 
 interface Map<T> {
@@ -102,7 +230,9 @@ interface AtCmdHandlerMap extends Map<ATCMDHDL.AtCmdHandler> {
 // - make connection 
 // - dispatch (raw and accummulated) data to AtCmd handlers
 // 
-@Injectable()
+@Injectable({
+    providedIn: 'root'
+})
 export class AtCmdDispatcherService {
 
     // member variables
@@ -135,10 +265,10 @@ export class AtCmdDispatcherService {
 
         // Instantiate ATCMD handler sub classes
         // - FIXME: should not done here
-        ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SNK', ATCMDHDLQCCSNK.AtCmdHandler_QCC_SNK.createInstance);
-        ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SRC', ATCMDHDLQCCSRC.AtCmdHandler_QCC_SRC.createInstance);
-        ATCMDHDL.AtCmdHandler.registerSubClass('DXS', ATCMDHDLDXS.AtCmdHandler_DXS.createInstance);
-        ATCMDHDL.AtCmdHandler.registerSubClass('WFI', ATCMDHDLWIFI8266.AtCmdHandler_WIFI_8266.createInstance);
+        // ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SNK', ATCMDHDLQCCSNK.AtCmdHandler_QCC_SNK.createInstance);
+        // ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SRC', ATCMDHDLQCCSRC.AtCmdHandler_QCC_SRC.createInstance);
+        ATCMDHDL.AtCmdHandler.registerSubClass('BLE', ATCMDHDLDXS.AtCmdHandler_DXS.createInstance);
+        ATCMDHDL.AtCmdHandler.registerSubClass('WIFI', ATCMDHDLWIFI8266.AtCmdHandler_WIFI_8266.createInstance);
     }
 
     //
@@ -273,18 +403,18 @@ export class AtCmdDispatcherService {
             // success
             this.scanSuccessCallback.bind(this),
             // failure
-            (obj) => {
+            ((obj) => {
                 console.log("[Dispatcher] scan failed");
                 //console.log(obj);
-                return this.scanFailureCb(obj);
-            }
+                return this.scanFailureCb({"retCode":-1,"status":obj.ErrMsg});
+            }).bind(this)
         );
         return true;
     }
 
-    stopScan() 
+    stopScan() : Promise<any> 
     {
-        this.dx.stopScan();
+        return this.dx.stopScan();
     }
 
     connect(uuid: string, timeout:number) : Promise<any>
@@ -328,19 +458,20 @@ export class AtCmdDispatcherService {
     
             // Clear up previous timer if any
             devInfo.clearConnectTimer();
-            devInfo.setConnectTimer(() => {
-                //devInfo.connecting = false;
-                // Disconnect (just in case)
-                //if( devInfo.connected )
-                {
-                    this.disconnect(devInfo.uuid);
-                }
-
+            devInfo.setConnectTimer((() => {
+                // Need to issue disconnect to DX
+                // - just in case it is in between CONNECTED and CONNECTED_READY
+                // - and we have seen that with BLE device (CC2640 SDK 1.45)
+                this.dx.disconnect(devInfo.uuid).then( ret => {
+                    // Notify the connect's promise that the connect is not successful
+                    reject({"retCode":-4,"status":"connect time out"});    
+                }).catch( ret => {
+                    // Notify the connect's promise that the connect is not successful
+                    reject({"retCode":-5,"status":"connect time out"});    
+                });
                 devInfo.state = DevState.IDLE;
 
-                // Notify the connect's promise that the connect is not successful
-                reject({"retCode":-4,"status":"connect time out"});    
-            },timeout);
+            }).bind(this),timeout);
     
             // Stop scanning
             // - FIXME: may not stop scan if supporting multiple device concurrently
@@ -364,7 +495,7 @@ export class AtCmdDispatcherService {
                     devInfo.clearConnectTimer();
     
                     // Notify the connect's promise that the connect is not successful
-                    reject({"retCode":-5,"status":"attempt but not successful"});    
+                    reject({"retCode":-6,"status":"attempt but not successful"});    
                 },
                 // Rx Data Callback
                 this.connectRxDataCallback.bind(this),
@@ -423,45 +554,57 @@ export class AtCmdDispatcherService {
         this.sysEvtCb(obj);
     }
     
-    scanSuccessCallback(obj) {
+    scanSuccessCallback(obj) 
+    {
         //console.log("scan success");
         //console.log(obj);
-        if (obj.state == 'active') {
+        var devInfo : BtDeviceInfo = null;
+    
+        if( this.btDevLinkedList[obj.info.UUID] ) 
+        {
+            // already in linked list
+            devInfo = this.btDevLinkedList[obj.info.UUID];
+        }
+        else if( this.btDevUnlinkList[obj.info.UUID] ) 
+        {
+            // already in unlink list
+            devInfo = this.btDevUnlinkList[obj.info.UUID];
+        }
+        
+        if (obj.state == 'active') 
+        {
             // Active
-            var newDevInfo : BtDeviceInfo = new BtDeviceInfo();
-            newDevInfo.name = obj.info.NAME;
-            newDevInfo.uuid = obj.info.UUID;
-            newDevInfo.rssi = obj.info.RSSI;
-            newDevInfo.active = true;
-
-            if( this.btDevUnlinkList[obj.info.UUID] ) {
-                // already in unlink list
-                this.btDevUnlinkList[obj.info.UUID] = newDevInfo;
-            }
-            else if( this.btDevLinkedList[obj.info.UUID] ) {
-                // already in linked list
-                this.btDevLinkedList[obj.info.UUID] = newDevInfo;
-            }
-            else {
+            if( devInfo == null) 
+            {
                 // not exist anywhere
                 // - add it into the unlink list
+                var newDevInfo : BtDeviceInfo = new BtDeviceInfo();
+                newDevInfo.name = obj.info.NAME;
+                newDevInfo.uuid = obj.info.UUID;
+                newDevInfo.rssi = obj.info.RSSI;
+                newDevInfo.active = true;
+    
                 this.btDevUnlinkList[obj.info.UUID] = newDevInfo;
+                this.scanSuccessCb(obj);
+            }
+            else if( !devInfo.isConnected() && devInfo.isConnecting() )
+            {
+                devInfo.active = true;
+                devInfo.name = obj.info.NAME;
+                devInfo.rssi = obj.info.RSSI;
+                this.scanSuccessCb(obj);
             }
         }
-        else {
-            // Inactive
-            if( this.btDevUnlinkList[obj.info.UUID] ) {
-                // already in unlink list
-                var devInfo = this.btDevUnlinkList[obj.info.UUID];
-                devInfo.active = false;
-            }
-            else if( this.btDevLinkedList[obj.info.UUID] ) {
-                // already in unlink list
-                var devInfo = this.btDevLinkedList[obj.info.UUID];
-                devInfo.active = false;
+        else 
+        {
+            if( devInfo && !devInfo.isConnected() && devInfo.isConnecting() )
+            {
+                devInfo.active = true;
+                devInfo.name = obj.info.NAME;
+                devInfo.rssi = obj.info.RSSI;
+                this.scanSuccessCb(obj);
             }
         }
-        this.scanSuccessCb(obj);
     }
 
     private createAndRunNullHandlers(devInfo : BtDeviceInfo)
@@ -473,21 +616,21 @@ export class AtCmdDispatcherService {
         var cmdChHandler : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
         if( !cmdChHandler )
         {
-            cmdChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_CMD(devInfo.uuid, devInfo.pinCode, this.sendDxCmd.bind(this), this.upgradeCmdChHandler.bind(this), this.terminateConnection.bind(this), this.events, this.dx);
+            cmdChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_CMD(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxCmd.bind(this), this.upgradeCmdChHandler.bind(this), this.terminateConnection.bind(this));
             this.cmdChHandlerList[devInfo.uuid] = cmdChHandler
         }
         cmdChHandler.notifyConnected();
 
-        // // Locate AT-CMD handler for data channel
-        // // - notify connect
-        // // - if new, create a null handler 1st
-        // // - null handler will determine how to create the correct AT-CMD handler eventually
-        // var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
-        // if( !dataChHandler )
-        // {
-        //     dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this), this.events, this.dx);
-        //     this.dataChHandlerList[devInfo.uuid] = dataChHandler
-        // }
+        // Locate AT-CMD handler for data channel
+        // - notify connect
+        // - if new, create a null handler 1st
+        // - null handler will determine how to create the correct AT-CMD handler eventually
+        //var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
+        //if( !dataChHandler )
+        //{
+        //    dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this));
+        //    this.dataChHandlerList[devInfo.uuid] = dataChHandler
+        //}
 
         // dataChHandler.notifyConnected();
     }
@@ -501,8 +644,9 @@ export class AtCmdDispatcherService {
             var devInfo : BtDeviceInfo;
             var isLinked = true;
 
-            devInfo = this.btDevLinkedList[obj.info.UUID]
-            if( !devInfo ) {
+            devInfo = this.btDevLinkedList[obj.info.UUID];
+            if( !devInfo ) 
+            {
                 // must be 1st time connected
                 isLinked = false;
                 devInfo = this.btDevUnlinkList[obj.info.UUID];
@@ -510,6 +654,7 @@ export class AtCmdDispatcherService {
                     // FIXME: any special handling??
                     //devInfo.connected = false;
                     //devInfo.connecting = false;
+                    console.log("[Dispatcher] " + obj.info.UUID + " forced disconnected [1]");
                     this.disconnect(devInfo.uuid);
                     devInfo.state = DevState.IDLE;
                     devInfo.clearConnectTimer();
@@ -531,6 +676,7 @@ export class AtCmdDispatcherService {
                 // - should not happen but just in case
                 // - disconnect
                 //devInfo.connected = false;
+                console.log("[Dispatcher] " + obj.info.UUID + " forced disconnected [2] state=" + devInfo.state);
                 this.disconnect(devInfo.uuid);
                 devInfo.state = DevState.IDLE;
                 devInfo.clearConnectTimer();
@@ -557,16 +703,16 @@ export class AtCmdDispatcherService {
             // Clear connect timer
             devInfo.clearConnectTimer();
 
-            if( this.dx["enableSecurity"] )
-            {
-                // Turn on security
-                this.dx["enableSecurity"](devInfo.uuid, true).then( ret => {
-                    this.createAndRunNullHandlers(devInfo);
-                }).catch( ret => {
-                    this.terminateConnection(devInfo.uuid, {"retCode":-1,"status":"security failed"});
-                });            
-            }
-            else
+            // if( this.dx["enableSecurity"] )
+            // {
+            //     // Turn on security
+            //     this.dx["enableSecurity"](devInfo.uuid, true).then( ret => {
+            //         this.createAndRunNullHandlers(devInfo);
+            //     }).catch( ret => {
+            //         this.terminateConnection(devInfo.uuid, {"retCode":-1,"status":"security failed"});
+            //     });            
+            // }
+            // else
             {
                 // Library doesn't support security
                 // - just create and run the NULL handlers
@@ -609,6 +755,8 @@ export class AtCmdDispatcherService {
             //devInfo.connected = false;
             //devInfo.connecting = false;
             devInfo.state = DevState.IDLE;
+            devInfo.cmdChHandler = null;
+            devInfo.dataChHandler = null;
             devInfo.connectedEndDate = new Date; 
             devInfo.clearConnectTimer();
 
@@ -665,8 +813,7 @@ export class AtCmdDispatcherService {
             return;
         }
         
-        var data = this.base64ToString(obj.data);
-        dataChHdl.appendData(data);
+        dataChHdl.appendData(obj.bytes);
 
         // Broadcast RX data received
         // - FIXME
@@ -682,8 +829,7 @@ export class AtCmdDispatcherService {
             return;
         }
         
-        var data = this.base64ToString(obj.data);
-        cmdChHdl.appendData(data);
+        cmdChHdl.appendData(obj.bytes);
 
         // Broadcast RX cmd response received
         // - FIXME        
@@ -756,6 +902,31 @@ export class AtCmdDispatcherService {
         newHandler.notifyConnected();
         this.dataChHandlerList[uuid] = newHandler;
 
+        // Bind handler to devInfo
+        var devInfo = this.btDevLinkedList[uuid];
+        if( !devInfo ) {
+            // Device must be removed
+
+            // Double check if it is in the unlink list
+            // - shouldn't happen but just in case
+            // - clean up the state
+            devInfo = this.btDevUnlinkList[uuid];
+            // if( devInfo )
+            // {
+            //     //devInfo.connected = false;
+            //     //devInfo.connecting = false;
+            //     devInfo.state = DevState.IDLE;
+            //     devInfo.clearConnectTimer();
+            // }
+        }
+        if( devInfo )
+        {
+            devInfo.dataChHandler = <ATCMDHDLCOMMON.AtCmdHandler_COMMON>newHandler;
+            setTimeout( () => {
+                devInfo.updateDataChannelRemoteDeviceGeneralInfo();
+            }, 2000);
+        }
+
         return true;
     }
 
@@ -797,6 +968,31 @@ export class AtCmdDispatcherService {
         var newHandler = ATCMDHDL.AtCmdHandler.createSubClassInstance(className, devInfo.uuid, className, this.sendDxCmd.bind(this), this.events);
         newHandler.notifyConnected();
         this.cmdChHandlerList[uuid] = newHandler;
+
+        // Bind handler to devInfo
+        var devInfo = this.btDevLinkedList[uuid];
+        if( !devInfo ) {
+            // Device must be removed
+
+            // Double check if it is in the unlink list
+            // - shouldn't happen but just in case
+            // - clean up the state
+            devInfo = this.btDevUnlinkList[uuid];
+            // if( devInfo )
+            // {
+            //     //devInfo.connected = false;
+            //     //devInfo.connecting = false;
+            //     devInfo.state = DevState.IDLE;
+            //     devInfo.clearConnectTimer();
+            // }
+        }
+        if( devInfo )
+        {
+            devInfo.cmdChHandler = <ATCMDHDLCOMMON.AtCmdHandler_COMMON>newHandler;
+            setTimeout( () => {
+                devInfo.updateCommandChannelRemoteDeviceGeneralInfo();
+            }, 2000);
+        }
 
         return true;
     }

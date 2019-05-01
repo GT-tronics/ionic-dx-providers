@@ -1,8 +1,6 @@
-import { Events } from 'ionic-angular';
+import { Events } from '@ionic/angular';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { DataExchangerService } from '../../providers/data-exchanger/data-exchanger.service';
-import { overrideFunction } from '@ionic-native/core';
-import { JsonPipe } from '@angular/common';
 
 export namespace ATCMDHDLNULL 
 {
@@ -19,11 +17,12 @@ export namespace ATCMDHDLNULL
             uuid : string, 
             pinCode : number,
             name : string,
+            skipAuth : boolean,
+            events : Events,
+            dx : DataExchangerService,
             sendCb : (uuid:string, data:string) => Promise<any>, 
             upgradeCb : (uuid:string, className:string) => boolean,
             terminateConnectionCb : (uuid:string, info:any) => void,
-            events : Events,
-            dx : DataExchangerService
         ) 
         {
             super(uuid, name, sendCb, events);
@@ -47,8 +46,15 @@ export namespace ATCMDHDLNULL
             // - try to send the 2nd time after not receiving OK for 5s (determined in ATCMDHDL.sendCmdInternal)
             this.sendCmdAtInitStage(this.atCmdNM.cmd, this.atCmdNM.seqId++).then( ret => {
                 console.log('[' + this.name + '] sent AT+NM? ok');
-                // Start authentication process
-                this.authenicate(pinCode);
+                if( !skipAuth )
+                {
+                    // Start authentication process
+                    this.authenicate(pinCode);
+                }
+                else
+                {
+                    this.readyToLaunchTheNewHandler();
+                }
             }).catch( obj => {
                 // Reset the send Q 1st
                 this.resetSendQ();
@@ -56,8 +62,15 @@ export namespace ATCMDHDLNULL
                 console.log('[' + this.name + '] sending AT+NM? the 2nd time ...');
                 this.sendCmdAtInitStage(this.atCmdNM.cmd, this.atCmdNM.seqId++).then( ret => {
                     console.log('[' + this.name + '] sent AT+NM? ok');
-                    // Start authentication process
-                    this.authenicate(pinCode);
+                    if( !skipAuth )
+                    {
+                        // Start authentication process
+                        this.authenicate(pinCode);
+                    }
+                    else
+                    {
+                        this.readyToLaunchTheNewHandler();
+                    }
                 }).catch( obj => {
                     // Reset the send Q
                     this.resetSendQ();
@@ -92,11 +105,11 @@ export namespace ATCMDHDLNULL
             return new Promise((resolve, reject) => {
                 this.atCmdKY.resolve = resolve;
                 this.atCmdKY.reject = reject;
-                this.sendCmdAtInitStage(this.atCmdKY.cmd, this.atCmdKY.seqId++).then( ret => {
+                this.sendCmdAtInitStage(this.atCmdKY.cmd, this.atCmdKY.seqId++, 2000).then( ret => {
                     console.log("[" + cmd + "] sent ok");
-                }).catch( obj => {
+                }).catch( ret => {
                     console.log("[" + cmd + "] sent failed");
-                    reject({"retCode":-4,"status":"timeout expired"});
+                    reject(ret);
                     this.atCmdKY.resolve = null;
                     this.atCmdKY.reject = null;
                 });
@@ -185,7 +198,7 @@ export namespace ATCMDHDLNULL
         )
         {
             //super(uuid, 'AT+NM?', "\\+NM\\:(.+),(.+),(.+)", cb);
-            super(uuid, 'AT+NM?', "\\+NM:(.+),(.+),(.+),(.+)", cb, events);
+            super(uuid, 'AT+NM?', "(?:AT)?\\+NM:(.+),(.+),(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -203,6 +216,14 @@ export namespace ATCMDHDLNULL
             else if( this.firmCode == 'SNK' )
             {
                 this.className = "QCC_SNK";
+            }
+            else if( this.firmCode == 'TRS' )
+            {
+                this.className = "BLE";
+            }
+            else if( this.firmCode == 'WFI' )
+            {
+                this.className = "WIFI";
             }
             else
             {
@@ -240,7 +261,7 @@ export namespace ATCMDHDLNULL
             events : Events
         )
         {
-            super(uuid, 'AT+KY', "\\+KY:(.+),(.+),(.+)", cb, events);
+            super(uuid, 'AT+KY', "(?:AT)?\\+KY:(.+),(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -272,14 +293,14 @@ export namespace ATCMDHDLNULL
         constructor(
             uuid : string,
             pinCode : number,
+            events : Events,
+            dx : DataExchangerService,
             sendCb : (uuid:string, data:string) => Promise<any>,
             upgradeCb : (uuid:string, className:string) => boolean,
             terminateConnectionCb : (uuid:string, info:any) => void,
-            events : Events,
-            dx : DataExchangerService
         )
         {
-            super(uuid, pinCode, 'AtCmdHandler_NULL_CMD', sendCb, upgradeCb, terminateConnectionCb, events, dx);
+            super(uuid, pinCode, 'AtCmdHandler_NULL_CMD', false, events, dx, sendCb, upgradeCb, terminateConnectionCb);
         }
     }
 
@@ -288,14 +309,14 @@ export namespace ATCMDHDLNULL
         constructor(
             uuid : string,
             pinCode : number,
+            events : Events,
+            dx : DataExchangerService,
             sendCb : (uuid:string, data:string) => Promise<any>,
             upgradeCb : (uuid:string, className:string) => boolean,
             terminateConnectionCb : (uuid:string, info:any) => void,
-            events : Events,
-            dx : DataExchangerService
         )
         {
-            super(uuid, pinCode, 'AtCmdHandler_NULL_DATA', sendCb, upgradeCb, terminateConnectionCb, events, dx);
+            super(uuid, pinCode, 'AtCmdHandler_NULL_DATA', true, events, dx, sendCb, upgradeCb, terminateConnectionCb);
         }
     }
 

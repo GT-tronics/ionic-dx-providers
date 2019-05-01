@@ -1,4 +1,4 @@
-import { Events } from 'ionic-angular';
+import { Events } from '@ionic/angular';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
 
@@ -729,7 +729,7 @@ export namespace ATCMDHDLQCCSRC
                             "retCode" : 0,
                             'connCount' : this.atCmdCR.connCount,
                             'codecCode' : codecCode, 
-                            'codecCodeStr' : this.atCmdCR.codecStrs[codecCode]
+                            'codecStr' : this.atCmdCR.codecStrs[codecCode]
                         });
                     }
                 });
@@ -1047,6 +1047,7 @@ export namespace ATCMDHDLQCCSRC
         connectedProfile : number;
         remoteDevName : string;
         avrcpVolume : number;
+        avrcpSyncVolume : number;
         avrcpSync : boolean;
     }
 
@@ -1111,7 +1112,7 @@ export namespace ATCMDHDLQCCSRC
                 var addrType = <AddrType>+matchAry[3];
                 var provisionProfile = parseInt(matchAry[4],16);
                 var connectedProfile = parseInt(matchAry[5],16);
-                var avrcpVol = +matchAry[6];
+                var avrcpSyncVol = +matchAry[6];
                 var avrcpSync = matchAry[7] == "0" ?false :true;
                 var remoteDevName = matchAry[8];
                 var isSppProvisioned : boolean = false;
@@ -1183,7 +1184,8 @@ export namespace ATCMDHDLQCCSRC
                     provisionProfile : provisionProfile, 
                     connectedProfile : connectedProfile,
                     remoteDevName : remoteDevName,
-                    avrcpVolume : avrcpVol,
+                    avrcpSyncVolume : avrcpSyncVol,
+                    avrcpVolume : avrcpSyncVol,
                     avrcpSync : avrcpSync
                 };
                 

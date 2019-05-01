@@ -1,12 +1,13 @@
 import { Injectable } from "@angular/core";
-import 'rxjs/add/operator/toPromise';
-import { Platform, AlertController } from 'ionic-angular';
-//import { NativeStorage } from '@ionic-native/native-storage';
+import { Platform, AlertController } from '@ionic/angular';
 
 declare var cordova: any;
 
 //DataExchanger service
-@Injectable()
+@Injectable({
+    providedIn: 'root'
+})
+
 export class DataExchangerService {
     // data-exchnager status
     STORAGE_DEVICE_ID_KEY = 'deviceId';
@@ -31,6 +32,8 @@ export class DataExchangerService {
     isSpp : boolean = false;
 
     errorUnsupported = {};
+
+    b64RvsLkup : Uint8Array;
 
     constructor(
         private platform: Platform,
@@ -58,15 +61,24 @@ export class DataExchangerService {
         this.dxCmdList = [];
         this.progress = null;
         this.readyDelayTimeout = null;
+
+        var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        // Use a lookup table to find the reverse base64 index.
+        this.b64RvsLkup = new Uint8Array(256);
+        for (var i = 0; i < chars.length; i++) 
+        {
+          this.b64RvsLkup[chars.charCodeAt(i)] = i;
+        }
+          
     }
 
     showErrorAlert(title, message) {
-        let alert = this.alertCtrl.create({
-            title: title,
-            subTitle: message,
+        this.alertCtrl.create({
+            message: title,
+            subHeader: message,
             buttons: ['Ok']
-        });
-        alert.present();
+        }).then( prompt => prompt.present());
     }
 
     init(sysEvtCb : (obj) => void) : Promise<any> {
@@ -101,7 +113,7 @@ export class DataExchangerService {
                         false,      // enable scrambler
                         true,       // enable TX backpressure
                         [
-                            "2285569f-6602-425a-9b33-306100a2050f", // BLE Service UUID
+                            // Insert your BLE Service UUID String
                         ],
                         function(obj) {
                             // success
@@ -176,13 +188,21 @@ export class DataExchangerService {
 
     // stop scanning for DataExchange devices.
     //
-    stopScan() {
-        this.platform.ready().then(() => {
-            this.isScanning = false;
-            cordova.plugin.dx.stopScan(
-                function(obj) {},
-                function(obj) {}
-            );
+    stopScan() : Promise<any> {
+        return new Promise((resolve, reject) => {
+            this.platform.ready().then(() => {
+                this.isScanning = false;
+                cordova.plugin.dx.stopScan(
+                    function(obj) 
+                    {
+                        resolve(obj);
+                    },
+                    function(obj) 
+                    {
+                        reject(obj);
+                    }
+                );
+            });
         });
     }
 
@@ -207,7 +227,7 @@ export class DataExchangerService {
                             devUUID,
                             //success
                             function(obj) {
-                                var data = this.base64ToString(obj.data);
+                                obj['bytes'] = this.base64ToBytes(obj.data.data);
                                 //console.log('[DX] RxData (' + data.length + ') and put into buffer: ' + this.rxDataBuffer);
                                 typeof rxData(obj) !== 'undefined' && rxData(obj);
                             }.bind(this),
@@ -224,7 +244,7 @@ export class DataExchangerService {
                             devUUID,
                             // Success
                             function(obj) {
-                                var data = this.base64ToString(obj.data);
+                                obj['bytes'] = this.base64ToBytes(obj.data.data);
                                 //console.log('[DX] RxCmd (' + data.length + ') and put into buffer: ' + this.rxCmdBuffer);
                                 typeof rxCmdRsp(obj) !== 'undefined' && rxCmdRsp(obj);
                             }.bind(this),
@@ -316,15 +336,19 @@ export class DataExchangerService {
 
     }
 
-    sendDxCmd(devUUID : string, str : string):Promise<any> {
+    sendDxCmd(devUUID : string, input : string | ArrayBuffer | SharedArrayBuffer) : Promise<any> {
         return new Promise( (resolve, reject) => {
             this.platform.ready().then(() => {
-                var bytes = this.stringToBytes(str + '\r\n');
+                var bytes : any = input;
+                if( typeof input == "string" )
+                {
+                    bytes = this.stringToBytes(input + '\r\n');
+                }
                 var params = {
                     uuid: devUUID == null ?this.deviceUUID :devUUID,
                     cmd: bytes
                 };
-                if (str.length == 0) {
+                if (bytes.byteLength == 0) {
                     resolve(params);
                     return;
                 }
@@ -337,7 +361,10 @@ export class DataExchangerService {
                     params.uuid,
                     params.cmd,
                     function(obj) {
-                        console.log('[DX] TxCmd: ' + str);
+                        if( typeof input == "string" )
+                        {
+                            console.log('[DX] TxCmd: ' + input);
+                        }
                         resolve(params);
                     },
                     function(obj) {
@@ -348,15 +375,19 @@ export class DataExchangerService {
         });
     }
 
-    sendDxData(devUUID : string, str : string):Promise<any> {
+    sendDxData(devUUID : string, input : string | ArrayBuffer | SharedArrayBuffer) : Promise<any> {
         return new Promise( (resolve, reject) => {
             this.platform.ready().then(() => {
-                var bytes = this.stringToBytes(str + '\r\n');
+                var bytes : any = input;
+                if( typeof input == "string" )
+                {
+                    bytes = this.stringToBytes(input + '\r\n');
+                }
                 var params = {
                     uuid: devUUID == null ?this.deviceUUID :devUUID,
                     data: bytes
                 };
-                if (str.length == 0) {
+                if (bytes.byteLength == 0) {
                     resolve(params);
                     return;
                 }
@@ -369,7 +400,10 @@ export class DataExchangerService {
                     params.uuid,
                     params.data,
                     function(obj) {
-                        console.log('[DX] TxData: ' + str);
+                        if( typeof input == "string" )
+                        {
+                            console.log('[DX] TxData: ' + input);
+                        }
                         resolve(params);
                     },
                     function(obj) {
@@ -580,20 +614,58 @@ export class DataExchangerService {
         }
     }
 
-    bytesToString(buffer) {
-        return String.fromCharCode.apply(null, new Uint8Array(buffer));
+    public bytesToString(buf : ArrayBuffer) : string 
+    {
+        // return String.fromCharCode.apply(null, new Uint8Array(buffer));
+        return new TextDecoder().decode(new Uint8Array(buf));
     }
 
-    stringToBytes(string) {
-        var array = new Uint8Array(string.length);
-        for (var i=0;i<string.length;i++) {
-            array[i] = string.charCodeAt(i);
-        }
+    public stringToBytes(utf16Str : string) : ArrayBuffer | SharedArrayBuffer
+    {
+        // var array = new Uint8Array(string.length);
+        // for (var i=0;i<string.length;i++) {
+        //     array[i] = string.charCodeAt(i);
+        // }
+        var array = new TextEncoder().encode(utf16Str);
         return array.buffer;
     }
 
-    base64ToString(b64) {
-        return atob(b64.data);
+    public base64ToBytes(b64 : string) : ArrayBuffer 
+    {
+        var bufLen = b64.length * 0.75;
+    
+        if (b64[b64.length - 1] === "=") 
+        {
+            bufLen--;
+            if (b64[b64.length - 2] === "=") 
+            {
+                bufLen--;
+            }
+        }
+    
+        var arraybuffer = new ArrayBuffer(bufLen);
+        var bytes = new Uint8Array(arraybuffer);
+        var encoded1, encoded2, encoded3, encoded4;
+        var p = 0;
+    
+        for (var i = 0; i < b64.length; i += 4) 
+        {
+            encoded1 = this.b64RvsLkup[b64.charCodeAt(i)];
+            encoded2 = this.b64RvsLkup[b64.charCodeAt(i+1)];
+            encoded3 = this.b64RvsLkup[b64.charCodeAt(i+2)];
+            encoded4 = this.b64RvsLkup[b64.charCodeAt(i+3)];
+    
+            bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+            bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+            bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+        }
+    
+        return arraybuffer;
+    };
+
+    public base64ToString(b64 : string) : string 
+    {
+        return this.bytesToString(this.base64ToBytes(b64));
     }
 
 }

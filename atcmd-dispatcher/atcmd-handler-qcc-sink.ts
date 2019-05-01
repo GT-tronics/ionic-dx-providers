@@ -1,7 +1,6 @@
-import { Events } from 'ionic-angular';
+import { Events } from '@ionic/angular';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
-import { Platform } from 'ionic-angular';
 
 export namespace ATCMDHDLQCCSNK {
     
@@ -12,7 +11,7 @@ export namespace ATCMDHDLQCCSNK {
     enum PairingTimeoutTo { CONNECTABLE = 0, IDLE = 1 }
     enum ConnectPolicy { CONNECT_TO_LAST = 0, CONNECT_TO_LIST }
     enum DeviceState { IDLE, CONNECTABLE, DISCOVERABLE, CONNECTED, OCE, ICE, ACTIVE_CALL, TEST, TWC_WAIT, TWC_ON_HOLD, TWC_MULTI_CALL, ACTIVE_CALL_NO_SCO, A2DP_STREAMING, IN_CONFIG_MODE }
-    enum PlayState { PAUSE, PLAYING };
+    enum PlayState { PAUSE = 0, PLAYING = 1, STOP = 2 };
     enum TrackDir { PREV = 0, NEXT = 1 };
     enum CodecMask
     {
@@ -36,9 +35,7 @@ export namespace ATCMDHDLQCCSNK {
         }
 
         public atCmdPDL : AtCmdRec_PDL;
-        public atCmdRNQ : AtCmdRec_RNQ;
         public atCmdDN : AtCmdRec_DN;
-        public atCmdDC : AtCmdRec_DC;
         public atCmdDCQ : AtCmdRec_DCQ;
         public atCmdDS : AtCmdRec_DS;
         public atCmdPP : AtCmdRec_PP;
@@ -64,29 +61,25 @@ export namespace ATCMDHDLQCCSNK {
             this.atCmdDN = new AtCmdRec_DN(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdDN, true);
 
-            // AT+DC?
-            this.atCmdDC = new AtCmdRec_DC(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdDC, true);
-
             // AT+DCQ=
             this.atCmdDCQ = new AtCmdRec_DCQ(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdDCQ, false);
 
             // AT+DS?
             this.atCmdDS = new AtCmdRec_DS(this.uuid, this.atCmdRspCallback.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdDS, true);
+            this.addAtCmdRecToParser(this.atCmdDS, false);
 
             // AT+PP?
             this.atCmdPP = new AtCmdRec_PP(this.uuid, this.atCmdRspCallback.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdPP, true);
+            this.addAtCmdRecToParser(this.atCmdPP, false);
             
             // AT+VL?
             this.atCmdVL = new AtCmdRec_VL(this.uuid, this.atCmdRspCallback.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdVL, true);
+            this.addAtCmdRecToParser(this.atCmdVL, false);
             
             // AT+CC?
             this.atCmdCC = new AtCmdRec_CC(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdCC, true);
+            this.addAtCmdRecToParser(this.atCmdCC, false);
             
             // AT+CR?
             this.atCmdCR = new AtCmdRec_CR(this.uuid, this.atCmdRspCallback.bind(this), events);
@@ -94,11 +87,11 @@ export namespace ATCMDHDLQCCSNK {
             
             // AT+EQB?
             this.atCmdEQB = new AtCmdRec_EQB(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdEQB, true);
+            this.addAtCmdRecToParser(this.atCmdEQB, false);
             
             // AT+EQC?
             this.atCmdEQC = new AtCmdRec_EQC(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdEQC, true);
+            this.addAtCmdRecToParser(this.atCmdEQC, false);
             
             // AT+EQPQ=
             this.atCmdEQPQ = new AtCmdRec_EQPQ(this.uuid, this.atCmdRspCallback_EQPQ.bind(this), events);
@@ -112,15 +105,9 @@ export namespace ATCMDHDLQCCSNK {
             this.atCmdPDL = new AtCmdRec_PDL(this.uuid, this.atCmdRspCallback_PDL.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdPDL, false);
 
-            // AT+RNQ=
-            this.atCmdRNQ = new AtCmdRec_RNQ(this.uuid, this.atCmdRspCallback_RNQ.bind(this), events);
-            this.addAtCmdRecToParser(this.atCmdRNQ, false);
-
             // AT+RSQ=
             this.atCmdRSQ = new AtCmdRec_RSQ(this.uuid, this.atCmdRspCallback_RSQ.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdRSQ, false);
-
-            this.refreshPdl();
         }
 
         //
@@ -153,26 +140,6 @@ export namespace ATCMDHDLQCCSNK {
             {
                 this.atCmdPDL.reject(params);
                 this.atCmdPDL.reject = null;
-            }
-        }
-
-        // Special Callback to handle Remote Name unsolicted notification
-        // - the key issue is that "OK" is received before the return is available.
-        // - therefore, the return must be handled in the callback.
-        // - also event broadcast is suppressed.
-        //
-        private atCmdRspCallback_RNQ( params ) 
-        {
-            console.log("[" + params.cmdRsp + "] completed");
-            if( params.retCode == 0 && this.atCmdRNQ.resolve )
-            {
-                this.atCmdRNQ.resolve(params);
-                this.atCmdRNQ.resolve = null;
-            }
-            if( params.retCode < 0 && this.atCmdRNQ.reject )
-            {
-                this.atCmdRNQ.reject(params);
-                this.atCmdRNQ.reject = null;
             }
         }
 
@@ -313,40 +280,6 @@ export namespace ATCMDHDLQCCSNK {
             }
 
             return {idx:-3, errStatus:"primary device not exists"};
-        }
-
-        //
-        // Should only unused by AtCmdRec_RNQ
-        public getDeviceRemoteName(pdlIdx : number) : Promise<any>
-        {
-            // if( cache && this.atCmdPDL.cached )
-            // {
-            //     return new Promise ((resolve, reject) => {
-            //         var pdlRecAry : PdlRec[] = this.atCmdPDL.pdlRecAryMap[AtCmdRec_PDL.gCnt];
-            //         if( pdlRecAry.length <= pdlIdx )
-            //         {
-            //             reject({"retCode":-2,"status":"pdlIdx out of range"});
-            //         }
-            //         else
-            //         {
-            //             resolve(pdlRecAry[pdlIdx].remoteDevName);
-            //         }
-            //     });
-            // }
-
-            var cmd = this.atCmdRNQ.cmd + pdlIdx;
-            return new Promise((resolve, reject) => {
-                this.atCmdRNQ.resolve = resolve;
-                this.atCmdRNQ.reject = reject;
-                this.atCmdRefresh(cmd).then( obj => {
-                    console.log("[" + cmd + "] sent ok");
-                }).catch( obj => {
-                    console.log("[" + cmd + "] sent failed");
-                    reject(obj);
-                    this.atCmdRNQ.resolve = null;
-                    this.atCmdRNQ.reject = null;
-                });
-            });        
         }
 
         //
@@ -537,17 +470,31 @@ export namespace ATCMDHDLQCCSNK {
             });       
         }
 
+        public switchActiveConnection(idx : number) : Promise<any>
+        {
+            var cmd = 'AT+AC=' + idx;
+            return new Promise((resolve, reject) => {
+                this.sendCmd(cmd, this.seqId++).then( obj => {
+                    //console.log("[" + cmd + "] sent ok");
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                });
+            });       
+        }
+
         //
         // Setters
         //
     
-        public setLocalBluetoothName( deviceName : string) : Promise<any>
+        public setLocalBluetoothName( name : string) : Promise<any>
         {
-            var cmd = "AT+DN=" + deviceName;
+            var cmd = "AT+DN=" + name;
             return new Promise((resolve, reject) => {
                 this.sendCmd(cmd, this.seqId++).then( obj => {
                     console.log("[" + cmd + "] sent ok");
-                    this.atCmdDN.deviceName = deviceName;
+                    this.atCmdDN.customName = name;
                     resolve({"retCode":0,"status":"success"});
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
@@ -556,13 +503,13 @@ export namespace ATCMDHDLQCCSNK {
             });
         }
     
-        public setVolumeSync( volSync : VolSync) : Promise<any>
+        public resetLocalBluetoothName() : Promise<any>
         {
-            var cmd = "AT+DC=" + this.atCmdDC.volSync + "," + (volSync == VolSync.VOL_SYNC_ON ?"1" :"0");
+            var cmd = "AT+DN=RESET DN";
             return new Promise((resolve, reject) => {
                 this.sendCmd(cmd, this.seqId++).then( obj => {
                     console.log("[" + cmd + "] sent ok");
-                    this.atCmdDC.volSync = volSync;
+                    this.atCmdDN.customName = "";
                     resolve({"retCode":0,"status":"success"});
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
@@ -573,11 +520,11 @@ export namespace ATCMDHDLQCCSNK {
     
         public setSleepMode( sleepMode : SleepMode) : Promise<any>
         {
-            var cmd = "AT+DC=" + (sleepMode == SleepMode.LED_OFF ?"1" :"0") + "," + this.atCmdDC.sleepMode;
+            var cmd = "AT+DCS=28," + (sleepMode == SleepMode.LED_OFF ?"1" :"0");
             return new Promise((resolve, reject) => {
                 this.sendCmd(cmd, this.seqId++).then( obj => {
                     console.log("[" + cmd + "] sent ok");
-                    this.atCmdDC.sleepMode = sleepMode;
+                    this.atCmdDCQ.sleepMode = sleepMode;
                     resolve({"retCode":0,"status":"success"});
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
@@ -585,7 +532,7 @@ export namespace ATCMDHDLQCCSNK {
                 });
             });       
         }
-
+    
         public setPowerOnPairing( onOff : boolean ) : Promise<any>
         {
             var cmd = "AT+DCS=13," + (onOff ?"1" :"0");
@@ -864,7 +811,10 @@ export namespace ATCMDHDLQCCSNK {
             if( cache && this.atCmdDN.cached )
             {
                 return new Promise ((resolve, reject) => {
-                    resolve(this.atCmdDN.deviceName);
+                    resolve({
+                        'origName' : this.atCmdDN.origName,
+                        'customName' : this.atCmdDN.customName
+                    });
                 });
             }
 
@@ -872,8 +822,10 @@ export namespace ATCMDHDLQCCSNK {
             return new Promise((resolve, reject) => {
                 this.atCmdRefresh(cmd).then( obj => {
                     console.log("[" + cmd + "] sent ok");
-                    resolve(this.atCmdDN.deviceName);
-                }).catch( obj => {
+                    resolve({
+                        'origName' : this.atCmdDN.origName,
+                        'customName' : this.atCmdDN.customName
+                    });                }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
                     reject({"retCode":-1,"status":"timeout expired"});
                 });
@@ -926,39 +878,18 @@ export namespace ATCMDHDLQCCSNK {
 
         public getSleepMode(cache : boolean = true) : Promise<any>
         {
-            if( cache &&  this.atCmdDC.cached )
+            if( cache && this.atCmdDCQ.sleepMode )
             {
                 return new Promise ((resolve, reject) => {
-                    resolve(this.atCmdDC.sleepMode);
+                    resolve(this.atCmdDCQ.sleepMode);
                 });
             }
 
-            var cmd = this.atCmdDC.cmd;
+            var cmd = this.atCmdDCQ.cmd + "28";
             return new Promise((resolve, reject) => {
                 this.atCmdRefresh(cmd).then( obj => {
                     console.log("[" + cmd + "] sent ok");
-                    resolve(this.atCmdDC.sleepMode);
-                }).catch( obj => {
-                    console.log("[" + cmd + "] sent failed");
-                    reject({"retCode":-1,"status":"timeout expired"});
-                });
-            });
-        }
-
-        public getVolumeSync(cache : boolean = true) : Promise<any>
-        {
-            if( cache &&  this.atCmdDC.cached )
-            {
-                return new Promise ((resolve, reject) => {
-                    resolve(this.atCmdDC.volSync);
-                });
-            }
-
-            var cmd = this.atCmdDC.cmd;
-            return new Promise((resolve, reject) => {
-                this.atCmdRefresh(cmd).then( obj => {
-                    console.log("[" + cmd + "] sent ok");
-                    resolve(this.atCmdDC.volSync);
+                    resolve(this.atCmdDCQ.sleepMode);
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
                     reject({"retCode":-1,"status":"timeout expired"});
@@ -1130,7 +1061,7 @@ export namespace ATCMDHDLQCCSNK {
                             'addr' : this.atCmdCR.addr,
                             'action' : this.atCmdCR.action,
                             'codecCode' : codecCode, 
-                            'codecCodeStr' : this.atCmdCR.codecStrs[codecCode]
+                            'codecStr' : this.atCmdCR.codecStrs[codecCode]
                         });
                     }
                 });
@@ -1206,12 +1137,17 @@ export namespace ATCMDHDLQCCSNK {
             });
         }
 
-        public getCodecMask(cache : boolean = true) : Promise<any>
+        public getCurrentCodec(cache : boolean = true) : Promise<any>
         {
             if( cache &&  this.atCmdCC.cached )
             {
                 return new Promise ((resolve, reject) => {
-                    resolve(this.atCmdCC.mask);
+                    resolve({
+                        'mask' : this.atCmdCC.mask, 
+                        'isStreaming' : this.atCmdCC.isStreaming, 
+                        'codecCode' : this.atCmdCC.codecCode, 
+                        'codecStr' : this.atCmdCC.codecStrs[this.atCmdCC.codecCode] 
+                    });
                 });
             }
 
@@ -1219,7 +1155,13 @@ export namespace ATCMDHDLQCCSNK {
             return new Promise((resolve, reject) => {
                 this.atCmdRefresh(cmd).then( obj => {
                     console.log("[" + cmd + "] sent ok");
-                    resolve(this.atCmdCC.mask);
+                    var params : any = {
+                        'mask' : this.atCmdCC.mask, 
+                        'isStreaming' : this.atCmdCC.isStreaming, 
+                        'codecCode' : this.atCmdCC.codecCode, 
+                        'codecStr' : this.atCmdCC.codecStrs[this.atCmdCC.codecCode] 
+                    };
+                    resolve(params);
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
                     reject({"retCode":-1,"status":"timeout expired"});
@@ -1340,8 +1282,10 @@ export namespace ATCMDHDLQCCSNK {
         isMusicConnected : ConnectState;
         provisionProfile : number;
         connectedProfile : number;
+        isStreaming : boolean;
         remoteDevName : string;
         rssi : number;
+        vol : number;
     }
 
     interface PdlRecMap extends Map<PdlRec[]>
@@ -1360,17 +1304,46 @@ export namespace ATCMDHDLQCCSNK {
         public pdlRecAryMap : PdlRecMap;
         public updateInProgress : boolean;
 
+        private timeoutTimer : any;
+
         constructor(
             uuid : string,
             cb : ( obj : {} ) => void,
             events : Events
         )
         {
-            super(uuid, 'AT+PDL?', "\\+PDL\\:(-?[0-9]+)(?:,(.+),([0-9]+),(0x[0-9a-fA-F]+),(0x[0-9a-fA-F]+))?", cb, events);
+            super(uuid, 'AT+PDL?', "\\+PDL\\:(-?[0-9]+)(?:,(.+),([0-9]+),(0x[0-9a-fA-F]+),(0x[0-9a-fA-F]+),([0-9]+),([0-9]),(.+))?", cb, events);
             this.pdlRecAryMap = <PdlRecMap>{};
+            this.updateInProgress = false;
 
             // Enable broadcasr event
-            this.eventId = 'QCC_SNK_PDL_CHANGED';
+            // this.eventId = 'QCC_SNK_PDL_CHANGED';
+        }
+
+        prepareForNotification(isComplete : boolean)
+        {
+            // Last one received
+            // - clear the previous map record.
+            if( this.pdlRecAryMap[AtCmdRec_PDL.gCnt-1])
+            {
+                delete this.pdlRecAryMap[AtCmdRec_PDL.gCnt-1];
+            }
+
+            this.params = { "pdl" : this.pdlRecAryMap[AtCmdRec_PDL.gCnt] };
+            this.params['seqid'] = this.seqId;
+            this.params['uuid'] = this.uuid;
+            this.params['cmdRsp'] = "+PDL:";
+            this.params['retCode'] = 0;
+            this.params['isComplete'] = isComplete;
+
+            //console.log(this.params);
+
+            // Clear timeout timer
+            if( this.timeoutTimer )
+            {
+                clearTimeout(this.timeoutTimer);
+                this.timeoutTimer = null;
+            }
         }
 
         match(matchAry : any[]) 
@@ -1381,21 +1354,8 @@ export namespace ATCMDHDLQCCSNK {
 
             if( idx == -1 )
             {
-
-                // Last one received
-                // - clear the previous map record.
-                if( this.pdlRecAryMap[AtCmdRec_PDL.gCnt-1])
-                {
-                    delete this.pdlRecAryMap[AtCmdRec_PDL.gCnt-1];
-                }
-
-                this.params = { "pdl" : this.pdlRecAryMap[AtCmdRec_PDL.gCnt] };
-                this.params['seqid'] = this.seqId;
-                this.params['uuid'] = this.uuid;
-                this.params['cmdRsp'] = "+PDL:";
-                this.params['retCode'] = 0;
-
-                //console.log(this.params);
+                // Prepare for notification
+                this.prepareForNotification(true);
 
                 // Notify
                 super.match(matchAry);
@@ -1411,7 +1371,7 @@ export namespace ATCMDHDLQCCSNK {
                 var isMusicProvisioned : boolean = false;                
                 var isPhoneConnected : ConnectState = ConnectState.NONE;
                 var isMusicConnected : ConnectState = ConnectState.NONE;
-
+                
                 if( provisionProfile & 0x1 )
                 {
                     isPhoneProvisioned = true;
@@ -1448,7 +1408,10 @@ export namespace ATCMDHDLQCCSNK {
                     isMusicConnected = ConnectState.SECONDARY;
                 }
                 
-                var remoteName = !AtCmdRec_PDL.gRemoteDevNames.hasOwnProperty(addr) ?"Unknown" :AtCmdRec_PDL.gRemoteDevNames[addr];
+                var vol : number = +matchAry[6];
+                var isStreaming : boolean = matchAry[7] == '1' ?true :false;
+                //var remoteName = !AtCmdRec_PDL.gRemoteDevNames.hasOwnProperty(addr) ?"Unknown" :AtCmdRec_PDL.gRemoteDevNames[addr];
+                var remoteName = matchAry[8];
 
                 pdlRec = 
                 { 
@@ -1462,24 +1425,52 @@ export namespace ATCMDHDLQCCSNK {
                     isMusicConnected : isMusicConnected,
                     provisionProfile : provisionProfile, 
                     connectedProfile : connectedProfile,
+                    isStreaming : isStreaming,
                     remoteDevName : remoteName,
-                    rssi : -127
+                    rssi : -127,
+                    vol : vol
                 };
 
                 if( idx == 0 )
                 {
                     AtCmdRec_PDL.gCnt++;
+
+                    // Set a timer to protect from missing +PDL:-1
+                    // - if not then it will stuck forever
+                    if( this.timeoutTimer )
+                    {
+                        clearTimeout(this.timeoutTimer);
+                    }
+                    this.timeoutTimer = setTimeout( () => {
+                        var pdlRecAry = this.pdlRecAryMap[AtCmdRec_PDL.gCnt];
+                        if( pdlRecAry.length > 0 )
+                        {
+                            if( this.resolve )
+                            {
+                                // Prepare for notification
+                                this.prepareForNotification(false);
+
+                                // Notify
+                                super.match(matchAry);
+                            }
+                        }
+                    }, 1500);
                 }
 
-                if( connectedProfile > 0 )
-                {
-                    var handler = <AtCmdHandler_QCC_SNK>this.handler;
-                    handler.getDeviceRemoteName(idx).then( obj => {
-                        AtCmdRec_PDL.gRemoteDevNames[obj.addr] = obj.name;
-                    }).catch( obj => {
-                        console.log("[AtCmdRec_PDL] not able to get remote name [" +JSON.stringify(obj) + "]");
-                    });
-                }
+                // mleung 20190301
+                // - AT+RNQ command has already been depredicated
+                // - remote device name can now be retrieved from +PDL: response
+                //
+                // if( connectedProfile > 0 && remoteName == "Unknown" )
+                // {
+                //     var handler = <AtCmdHandler_QCC_SNK>this.handler;
+                //     handler.getDeviceRemoteName(idx).then( obj => {
+                //         console.log("[AtCmdRec_PDL] RNQ: " +JSON.stringify(obj));
+                //         AtCmdRec_PDL.gRemoteDevNames[obj.addr] = obj.name;
+                //     }).catch( obj => {
+                //         console.log("[AtCmdRec_PDL] not able to get remote name [" +JSON.stringify(obj) + "]");
+                //     });
+                // }
             }
 
             var seqId = AtCmdRec_PDL.gCnt;
@@ -1520,39 +1511,39 @@ export namespace ATCMDHDLQCCSNK {
 
     }
 
-    export class AtCmdRec_RNQ extends ATCMDHDL.AtCmdRec 
-    {
-        constructor(
-            uuid : string,
-            cb : ( obj : {} ) => void,
-            events : Events
-        )
-        {
-            super(uuid, 'AT+RNQ=', "\\+RNQ\\:(.+),([0-9]+),(.+)", cb, events);
-        }
+    // export class AtCmdRec_RNQ extends ATCMDHDL.AtCmdRec 
+    // {
+    //     constructor(
+    //         uuid : string,
+    //         cb : ( obj : {} ) => void,
+    //         events : Events
+    //     )
+    //     {
+    //         super(uuid, 'AT+RNQ=', "\\+RNQ\\:(.+),([0-9]+),(.+)", cb, events);
+    //     }
 
-        match(matchAry : any[]) 
-        {
-            var addr = matchAry[1];
-            var name = matchAry[3];
+    //     match(matchAry : any[]) 
+    //     {
+    //         var addr = matchAry[1];
+    //         var name = matchAry[3];
 
-            name.trim();
+    //         name.trim();
 
-            this.params = 
-            {
-                "cmdRsp" : "+RNQ:",
-                "uuid" : this.uuid,
-                "seqId" : this.seqId,
-                "retCode" : 0,
-                "status" : "success",
-                "addr" : addr, 
-                "name" : name
-            }
+    //         this.params = 
+    //         {
+    //             "cmdRsp" : "+RNQ:",
+    //             "uuid" : this.uuid,
+    //             "seqId" : this.seqId,
+    //             "retCode" : 0,
+    //             "status" : "success",
+    //             "addr" : addr, 
+    //             "name" : name
+    //         }
 
-            // Always put this to last
-            super.match(matchAry);
-        }
-    }
+    //         // Always put this to last
+    //         super.match(matchAry);
+    //     }
+    // }
     
     //
     // AT+DN? AT-CMD Record
@@ -1560,7 +1551,8 @@ export namespace ATCMDHDLQCCSNK {
 
     export class AtCmdRec_DN extends ATCMDHDL.AtCmdRec 
     {
-        public deviceName : string;
+        public customName : string = "";
+        public origName : string = "";
 
         constructor(
             uuid : string,
@@ -1568,12 +1560,13 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+DN?', "\\+DN\\:(.+)", cb, events);
+            super(uuid, 'AT+DN?', "\\+DN\\:(.*),(.*)", cb, events);
         }
 
         match(matchAry : any[]) 
         {
-            this.deviceName = matchAry[1];
+            this.origName = matchAry[1].trim();
+            this.customName = matchAry[2].trim();
 
             this.params = 
             {
@@ -1582,46 +1575,8 @@ export namespace ATCMDHDLQCCSNK {
                 "seqId" : this.seqId,
                 "retCode" : 0,
                 "status" : "success",
-                "name" : this.deviceName 
-            }
-
-            // Always put this to last
-            super.match(matchAry);
-        }
-    }
-
-    //
-    // AT+DC? AT-CMD Record
-    //
-
-    export class AtCmdRec_DC extends ATCMDHDL.AtCmdRec 
-    {
-        public sleepMode : SleepMode;
-        public volSync : VolSync;
-
-        constructor(
-            uuid : string,
-            cb : ( obj : {} ) => void,
-            events : Events
-        )
-        {
-            super(uuid, 'AT+DC?', "\\+DC\\:(.+),(.+)", cb, events);
-        }
-
-        match(matchAry : any[]) 
-        {
-            this.sleepMode = <SleepMode>+matchAry[1];
-            this.volSync = <VolSync>+matchAry[2];
-
-            this.params = 
-            {
-                "cmdRsp" : "+DC:",
-                "uuid" : this.uuid,
-                "seqId" : this.seqId,
-                "retCode" : 0,
-                "status" : "success",
-                "sleepMode" : this.sleepMode,
-                "volSync" : this.volSync 
+                "origName" : this.origName, 
+                "customName" : this.customName
             }
 
             // Always put this to last
@@ -1642,6 +1597,7 @@ export namespace ATCMDHDLQCCSNK {
         public connectAttemptRepeat : number;
         public pairingTimeoutTo : PairingTimeoutTo;
         public connectPolicy : ConnectPolicy;
+        public sleepMode : SleepMode;
 
         public powerOnPairingCached : boolean = false;
         public powerOnConnectCached : boolean = false;
@@ -1650,6 +1606,7 @@ export namespace ATCMDHDLQCCSNK {
         public connectAttemptRepeatCached : boolean = false;
         public pairingTimeoutToCached : boolean = false;
         public connectPolicyCached : boolean = false;
+        public sleepModeCached : boolean = false;
 
         constructor(
             uuid : string,
@@ -1714,6 +1671,13 @@ export namespace ATCMDHDLQCCSNK {
                     this.connectPolicy = <ConnectPolicy>+matchAry[2];
                     this.connectPolicyCached = true;
                     val = this.connectPolicy;
+                    break;
+                }
+                case 28: // Sleep Mode
+                {
+                    this.sleepMode = <SleepMode>+matchAry[2];
+                    this.sleepModeCached = true;
+                    val = this.sleepMode;
                     break;
                 }
                 default:
@@ -1865,6 +1829,9 @@ export namespace ATCMDHDLQCCSNK {
     export class AtCmdRec_CC extends ATCMDHDL.AtCmdRec 
     {
         public mask : number;
+        public isStreaming : boolean;
+        public codecCode : number;
+        public codecStrs : string[];
 
         constructor(
             uuid : string,
@@ -1872,13 +1839,16 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+CC?', "\\+CC\\:(.+)", cb, events);
+            super(uuid, 'AT+CC?', "\\+CC\\:(.+),([0-9]),([0-9]+)", cb, events);
             this.mask = 0;
+            this.codecStrs = ["SBC", "MP3", "AAC", "APTX", "APTX-LL", "FASTSTREAM"];
         }
 
         match(matchAry : any[]) 
         {
-            this.mask = +matchAry[1];
+            this.mask = parseInt(matchAry[1],16);
+            this.isStreaming = matchAry[2] == '1' ?true :false;
+            this.codecCode = +matchAry[3];
             this.params = 
             {
                 "cmdRsp" : "+CC:",
@@ -1886,7 +1856,10 @@ export namespace ATCMDHDLQCCSNK {
                 "seqId" : this.seqId,
                 "retCode" : 0,
                 "status" : "success",
-                "mask" : this.mask
+                "mask" : this.mask,
+                "isStreaming" : this.isStreaming,
+                "codecCode" : this.codecCode,
+                'codecStr' : this.codecStrs[this.codecCode]
             }
 
             // Always put this to last
@@ -1943,7 +1916,7 @@ export namespace ATCMDHDLQCCSNK {
                 "primary" : primary,
                 "action" : this.action,
                 "codecCode" : this.codecCode,
-                "codec" : this.codecStrs[this.codecCode]
+                "codecStr" : this.codecStrs[this.codecCode]
             }
 
             // Always put this to last
