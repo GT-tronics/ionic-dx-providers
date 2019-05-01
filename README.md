@@ -1,9 +1,12 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## V4 R2
+* turned on AtCmdHandle for QCC and turned off for BLE and WIFI as default
+
 ## V4 R1
 * branched from Master R8
-* merged with ionic-dx-providers-private
+* merged with ionic-dx-providers-private ionic-v4 R5
 
 ## R8
 * if null handlers fails to spawn the application handler, it will terminate the connection and notify disconnect rather than hanging

@@ -265,10 +265,10 @@ export class AtCmdDispatcherService {
 
         // Instantiate ATCMD handler sub classes
         // - FIXME: should not done here
-        // ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SNK', ATCMDHDLQCCSNK.AtCmdHandler_QCC_SNK.createInstance);
-        // ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SRC', ATCMDHDLQCCSRC.AtCmdHandler_QCC_SRC.createInstance);
-        ATCMDHDL.AtCmdHandler.registerSubClass('BLE', ATCMDHDLDXS.AtCmdHandler_DXS.createInstance);
-        ATCMDHDL.AtCmdHandler.registerSubClass('WIFI', ATCMDHDLWIFI8266.AtCmdHandler_WIFI_8266.createInstance);
+        ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SNK', ATCMDHDLQCCSNK.AtCmdHandler_QCC_SNK.createInstance);
+        ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SRC', ATCMDHDLQCCSRC.AtCmdHandler_QCC_SRC.createInstance);
+        // ATCMDHDL.AtCmdHandler.registerSubClass('BLE', ATCMDHDLDXS.AtCmdHandler_DXS.createInstance);
+        // ATCMDHDL.AtCmdHandler.registerSubClass('WIFI', ATCMDHDLWIFI8266.AtCmdHandler_WIFI_8266.createInstance);
     }
 
     //
@@ -625,12 +625,12 @@ export class AtCmdDispatcherService {
         // - notify connect
         // - if new, create a null handler 1st
         // - null handler will determine how to create the correct AT-CMD handler eventually
-        //var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
-        //if( !dataChHandler )
-        //{
-        //    dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this));
-        //    this.dataChHandlerList[devInfo.uuid] = dataChHandler
-        //}
+        // var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
+        // if( !dataChHandler )
+        // {
+        //     dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this));
+        //     this.dataChHandlerList[devInfo.uuid] = dataChHandler
+        // }
 
         // dataChHandler.notifyConnected();
     }
@@ -703,16 +703,6 @@ export class AtCmdDispatcherService {
             // Clear connect timer
             devInfo.clearConnectTimer();
 
-            // if( this.dx["enableSecurity"] )
-            // {
-            //     // Turn on security
-            //     this.dx["enableSecurity"](devInfo.uuid, true).then( ret => {
-            //         this.createAndRunNullHandlers(devInfo);
-            //     }).catch( ret => {
-            //         this.terminateConnection(devInfo.uuid, {"retCode":-1,"status":"security failed"});
-            //     });            
-            // }
-            // else
             {
                 // Library doesn't support security
                 // - just create and run the NULL handlers
