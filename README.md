@@ -1,6 +1,9 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## V4 R3
+* added page-params-passing services (copied from ionic-dx-providers-private ionic-v4 branch)
+
 ## V4 R2
 * turned on AtCmdHandle for QCC and turned off for BLE and WIFI as default
 
