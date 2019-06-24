@@ -24,7 +24,7 @@ export namespace ATCMDHDLCOMMON
             super(uuid, name, sendCb, events);
 
             // Install parser speed filter 
-            this.installParserSpeedFilter("\\+[0-9A-Z]+\\:.+");
+            this.installParserSpeedFilter("\\+[0-9A-Za-z]+[:=]{1}.+");
     
             this.seqId = 0;
             
@@ -46,19 +46,17 @@ export namespace ATCMDHDLCOMMON
             // Set echo off (AT+EC=0)
             // - this is the 2nd command to be sent
             this.setEcho(false).then( obj => {
-                var cmd = this.atCmdVS.cmd
-                this.sendCmdAtInitStage(cmd, this.atCmdVS.seqId++).then( ret => {
-                    console.log("[" + cmd + "] sent ok");
-                    var cmd = this.atCmdNM.cmd
-                    this.sendCmdAtInitStage(cmd, this.atCmdNM.seqId++).then( ret => {
+                this.sendCmdAtInitStage(this.atCmdVS.cmd, this.atCmdVS.seqId++).then( ret => {
+                    console.log("[AT+VS?] sent ok");
+                    this.sendCmdAtInitStage(this.atCmdNM.cmd, this.atCmdNM.seqId++).then( ret => {
                         // Release all other AT command for processing
-                        console.log("[" + cmd + "] sent ok");
+                        console.log("[AT+NM?] sent ok");
                         this.setSendReady();
                     }).catch( obj => {
-                        console.log("[" + cmd + "] sent failed");
+                        console.log("[AT+NM?] sent failed");
                     });
                 }).catch( obj => {
-                    console.log("[" + cmd + "] sent failed");
+                    console.log("[AT+VS?] sent failed");
                 });
             }).catch( obj => {
             });

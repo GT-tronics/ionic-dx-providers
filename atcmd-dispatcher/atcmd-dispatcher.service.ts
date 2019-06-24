@@ -4,11 +4,7 @@ import { DataExchangerService } from '../../providers/data-exchanger/data-exchan
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
 import { ATCMDHDLNULL } from '../../providers/atcmd-dispatcher/atcmd-handler-null';
-import { ATCMDHDLQCCSNK } from '../../providers/atcmd-dispatcher/atcmd-handler-qcc-sink';
-import { ATCMDHDLQCCSRC } from '../../providers/atcmd-dispatcher/atcmd-handler-qcc-src';
-import { ATCMDHDLDXS } from '../../providers/atcmd-dispatcher/atcmd-handler-dxs';
-import { ATCMDHDLWIFI8266 } from '../../providers/atcmd-dispatcher/atcmd-handler-wifi-8266';
-import { promise } from 'protractor';
+import { ATCMDHDLGLOBAL } from '../../atcmd-handler-global';
 
 declare var cordova: any;
 
@@ -145,7 +141,7 @@ export class BtDeviceInfo {
 
     updateDataChannelRemoteDeviceGeneralInfo()
     {
-        console.log("[Diaptcher] update data channel general info");
+        console.log("[Dispatcher] update data channel general info");
         if( this.generalInfo.dataCh.deviceId == "Unknown" )
         {
             var info = this.getChannelRemoteDeviceGeneralInfo(this.dataChHandler);
@@ -171,7 +167,7 @@ export class BtDeviceInfo {
 
     updateCommandChannelRemoteDeviceGeneralInfo()
     {
-        console.log("[Diaptcher] update cmd channel general info");
+        console.log("[Dispatcher] update cmd channel general info");
         if( this.generalInfo.cmdCh.deviceId == "Unknown" )
         {
             var info = this.getChannelRemoteDeviceGeneralInfo(this.cmdChHandler);
@@ -225,6 +221,13 @@ interface BtDeviceInfoMap extends Map<BtDeviceInfo>{
 interface AtCmdHandlerMap extends Map<ATCMDHDL.AtCmdHandler> {
 }
 
+enum  SysState
+{
+    sysoff,
+    sysreset,
+    syson,
+}
+
 // ATCMD Dispatcher service
 // - scan device and handle scan device list
 // - make connection 
@@ -245,6 +248,9 @@ export class AtCmdDispatcherService {
     private scanFailureCb : (obj) => void;
     private sysEvtCb    : (obj) => void;
 
+    private state : SysState = SysState.sysoff;
+    private restartScan : boolean = false;
+
     constructor(
         private platform: Platform,
         public events : Events,
@@ -259,33 +265,27 @@ export class AtCmdDispatcherService {
         this.btDevUnlinkList = <BtDeviceInfoMap>{};
 
         // Ths list holds all the discovered and linked device info
-        // - FIXME: linked list should be persistent, therefore we should read 
-        //   it from storage
         this.btDevLinkedList = <BtDeviceInfoMap>{};
-
-        // Instantiate ATCMD handler sub classes
-        // - FIXME: should not done here
-        ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SNK', ATCMDHDLQCCSNK.AtCmdHandler_QCC_SNK.createInstance);
-        ATCMDHDL.AtCmdHandler.registerSubClass('QCC_SRC', ATCMDHDLQCCSRC.AtCmdHandler_QCC_SRC.createInstance);
-        // ATCMDHDL.AtCmdHandler.registerSubClass('BLE', ATCMDHDLDXS.AtCmdHandler_DXS.createInstance);
-        // ATCMDHDL.AtCmdHandler.registerSubClass('WIFI', ATCMDHDLWIFI8266.AtCmdHandler_WIFI_8266.createInstance);
+        
+        // Instantiate ATCMD handler sub classes via AtCmdHandlerGlobal
+        ATCMDHDLGLOBAL.AtCmdHandler_GLOBAL.registerAllSubClasses();
     }
 
     //
     // Initialization
     //
 
-    init(sysEvtCb : (obj) => void) : Promise<any> 
+    init(sysEvtCb : (obj) => void, useSpp : boolean = true) : Promise<any> 
     {
         return new Promise((resolve, reject) => {
-            console.log("[Diaptcher] initiating DX ...");
+            console.log("[Dispatcher] initiating DX ...");
             this.sysEvtCb = sysEvtCb;
-            this.dx.init(this.sysEventCallback.bind(this)).catch((obj)=> {
-              console.log("[Diaptcher] init failed");
+            this.dx.init(this.sysEventCallback.bind(this), useSpp).catch((obj)=> {
+              console.log("[Dispatcher] init failed");
               console.log(obj);
             }).then((obj) => {
               if( obj.state == 'init' ) {
-                console.log("[Diaptcher] init success");
+                console.log("[Dispatcher] init success");
                 // Reset device lists
                 this.btDevLinkedList = <BtDeviceInfoMap>{};
                 this.btDevUnlinkList = <BtDeviceInfoMap>{};
@@ -370,6 +370,24 @@ export class AtCmdDispatcherService {
         return values;
     }
 
+    private internalStartScan()
+    {
+        // Start BLE scanning
+        // - the success and failure functions will be called repeatively.
+        // - for any new device found, it will be added in a list (btDevices)
+        // - app should refresh the screen with the list.
+        this.dx.startScan(
+            // success
+            this.scanSuccessCallback.bind(this),
+            // failure
+            ((obj) => {
+                console.log("[Dispatcher] scan failed");
+                //console.log(obj);
+                return this.scanFailureCb({"retCode":-1,"status":obj.ErrMsg});
+            }).bind(this)
+        );
+    }
+
     //
     // BLE Connection Managmenet APIs
     //
@@ -394,26 +412,22 @@ export class AtCmdDispatcherService {
 
         // We don't need to touch the linked list 
         // - as the list is persistent
+        if( this.state != SysState.syson )
+        {
+            this.restartScan = true;
+        }
+        else
+        {
+            this.restartScan = false;
+            this.internalStartScan();
+        }
 
-        // Start BLE scanning
-        // - the success and failure functions will be called repeatively.
-        // - for any new device found, it will be added in a list (btDevices)
-        // - app should refresh the screen with the list.
-        this.dx.startScan(
-            // success
-            this.scanSuccessCallback.bind(this),
-            // failure
-            ((obj) => {
-                console.log("[Dispatcher] scan failed");
-                //console.log(obj);
-                return this.scanFailureCb({"retCode":-1,"status":obj.ErrMsg});
-            }).bind(this)
-        );
         return true;
     }
 
     stopScan() : Promise<any> 
     {
+        this.restartScan = false;
         return this.dx.stopScan();
     }
 
@@ -426,17 +440,21 @@ export class AtCmdDispatcherService {
                 return;
             }
 
-            var devInfo : BtDeviceInfo;
-    
-            if( this.btDevUnlinkList[uuid] )
+            if( this.state != SysState.syson )
             {
-                devInfo = this.btDevUnlinkList[uuid];
+                // Notify the connect's promise that the connect is not successful
+                reject({"retCode":-7,"status":"BT is off"});
+                return;
             }
-            else if( this.btDevLinkedList[uuid] )
+
+            var devInfo : BtDeviceInfo = this.btDevUnlinkList[uuid];
+    
+            if( !devInfo )
             {
                 devInfo = this.btDevLinkedList[uuid];
             }
-            else
+            
+            if( !devInfo )
             {
                 // uuid is not in either device list
                 //  - notify the connect's promise that the connect is not successful
@@ -456,19 +474,21 @@ export class AtCmdDispatcherService {
     
             devInfo.state = DevState.CONNECTING;
     
+            // console.log( devInfo );
+
             // Clear up previous timer if any
-            devInfo.clearConnectTimer();
             devInfo.setConnectTimer((() => {
                 // Need to issue disconnect to DX
                 // - just in case it is in between CONNECTED and CONNECTED_READY
                 // - and we have seen that with BLE device (CC2640 SDK 1.45)
                 this.dx.disconnect(devInfo.uuid).then( ret => {
                     // Notify the connect's promise that the connect is not successful
-                    reject({"retCode":-4,"status":"connect time out"});    
+                    // reject({"retCode":-4,"status":"connect time out"});    
                 }).catch( ret => {
                     // Notify the connect's promise that the connect is not successful
-                    reject({"retCode":-5,"status":"connect time out"});    
+                    // reject({"retCode":-5,"status":"connect time out"});    
                 });
+                reject({"retCode":-7,"status":"connect time out"});    
                 devInfo.state = DevState.IDLE;
 
             }).bind(this),timeout);
@@ -527,6 +547,19 @@ export class AtCmdDispatcherService {
         }
         
         return new Promise((resolve, reject) => {
+            // Flush the queues of ATCMD handler
+            var cmdChHdlr = this.getCmdChHandler(uuid);
+            var dataChHdlr = this.getDataChHandler(uuid);
+
+            if( dataChHdlr && dataChHdlr instanceof ATCMDHDL.AtCmdHandler_TEXTBASE )
+            {
+                (<ATCMDHDL.AtCmdHandler_TEXTBASE>dataChHdlr).flushSendQ();
+            }
+            if( cmdChHdlr && cmdChHdlr instanceof ATCMDHDL.AtCmdHandler_TEXTBASE )
+            {
+                (<ATCMDHDL.AtCmdHandler_TEXTBASE>cmdChHdlr).flushSendQ();
+            }
+
             this.dx.disconnect(uuid).then( ret => {
                 resolve(ret);
             }).catch( ret => {
@@ -539,9 +572,30 @@ export class AtCmdDispatcherService {
         });
     }
 
-    firmwareUpgradeFor8266(uuid : string, firmBinaryData : string, firmNameStr : string, success : (obj) => void, failure : (obj) => void, progress : (obj) => void)
+    recoverStaleDisconnect(uuid : string)
     {
-        this.dx.primeDxFirmwareFor8266(uuid, firmBinaryData, firmNameStr, success, failure, progress);
+        var devInfo : BtDeviceInfo;
+    
+        if( this.btDevUnlinkList[uuid] )
+        {
+            devInfo = this.btDevUnlinkList[uuid];
+        }
+        else if( this.btDevLinkedList[uuid] )
+        {
+            devInfo = this.btDevLinkedList[uuid];
+        }
+        else
+        {
+            return;
+        }
+
+        devInfo.state = DevState.IDLE;
+        devInfo.clearConnectTimer(); 
+    }
+
+    upgradeFirmware(uuid : string, firmCode : string, firmBin : ArrayBuffer, firmName : string, success : (obj) => void, failure : (obj) => void, progress : (obj) => void)
+    {
+        this.dx.primeDxFirmware(uuid, firmCode, firmBin, firmName, success, failure, progress);
     }
 
     //
@@ -550,7 +604,36 @@ export class AtCmdDispatcherService {
 
     sysEventCallback(obj) 
     {
-        //console.log("[Diaptcher] SysEvt: " + obj.state);
+        if( obj.state == 'syson' )
+        {
+            this.state = SysState.syson;
+
+            if( this.restartScan )
+            {
+                this.restartScan = false;
+                this.internalStartScan();
+            }
+        }
+        else if( obj.state == 'sysoff' )
+        {
+            this.state = SysState.sysoff;
+            if( this.dx.isScanning )
+            {
+                this.restartScan = true;
+            }
+            this.dx.stopScan();
+        }
+        else if( obj.state == 'sysreset' )
+        {
+            this.state = SysState.sysreset;
+            if( this.dx.isScanning )
+            {
+                this.restartScan = true;
+            }
+            this.dx.stopScan();
+        }
+
+        //console.log("[Dispatcher] SysEvt: " + obj.state);
         this.sysEvtCb(obj);
     }
     
@@ -587,7 +670,7 @@ export class AtCmdDispatcherService {
                 this.btDevUnlinkList[obj.info.UUID] = newDevInfo;
                 this.scanSuccessCb(obj);
             }
-            else if( !devInfo.isConnected() && devInfo.isConnecting() )
+            else if( devInfo.isIdle() )
             {
                 devInfo.active = true;
                 devInfo.name = obj.info.NAME;
@@ -597,9 +680,9 @@ export class AtCmdDispatcherService {
         }
         else 
         {
-            if( devInfo && !devInfo.isConnected() && devInfo.isConnecting() )
+            if( devInfo && devInfo.isIdle() )
             {
-                devInfo.active = true;
+                devInfo.active = false;
                 devInfo.name = obj.info.NAME;
                 devInfo.rssi = obj.info.RSSI;
                 this.scanSuccessCb(obj);
@@ -652,15 +735,8 @@ export class AtCmdDispatcherService {
                 devInfo = this.btDevUnlinkList[obj.info.UUID];
                 if( !devInfo ) {
                     // FIXME: any special handling??
-                    //devInfo.connected = false;
-                    //devInfo.connecting = false;
                     console.log("[Dispatcher] " + obj.info.UUID + " forced disconnected [1]");
-                    this.disconnect(devInfo.uuid);
-                    devInfo.state = DevState.IDLE;
-                    devInfo.clearConnectTimer();
-
-                    // Notify the connect's promise that the connect is not successful
-                    devInfo.promiseReject({"retCode":-6,"status":"dev info not found"});
+                    this.disconnect(obj.info.UUID);
                     return;
                 }
             }
@@ -676,7 +752,8 @@ export class AtCmdDispatcherService {
                 // - should not happen but just in case
                 // - disconnect
                 //devInfo.connected = false;
-                console.log("[Dispatcher] " + obj.info.UUID + " forced disconnected [2] state=" + devInfo.state);
+                console.log("[Dispatcher] " + obj.info.UUID + " forced disconnected [2] state=" + devInfo.state + (isLinked ?" linked" :"unlink"));
+                // console.log( devInfo );
                 this.disconnect(devInfo.uuid);
                 devInfo.state = DevState.IDLE;
                 devInfo.clearConnectTimer();

@@ -81,7 +81,7 @@ export class DataExchangerService {
         }).then( prompt => prompt.present());
     }
 
-    init(sysEvtCb : (obj) => void) : Promise<any> {
+    init(sysEvtCb : (obj) => void, useSpp : boolean) : Promise<any> {
         return new Promise((resolve,reject)=>{
             this.platform.ready().then(() => {
                 // TODO: to remove after upgrading to Dx plugin that takes care of this
@@ -106,7 +106,7 @@ export class DataExchangerService {
                 } else {
                     cordova.plugin.dx.init(
                         1,          // number of devices can be connected
-                        -70.0,      // proximity power level
+                        -127.0,     // proximity power level (disabled)
                         10.0,       // active scan timeout
                         false,      // auto connect (must be false)
                         true,       // enable command channel
@@ -115,6 +115,7 @@ export class DataExchangerService {
                         [
                             // Insert your BLE Service UUID String
                         ],
+                        useSpp,
                         function(obj) {
                             // success
                             // typeof success !== 'undefined' && success(obj);
@@ -125,11 +126,14 @@ export class DataExchangerService {
                                 {
                                     this.isSpp = obj.isSpp;
                                 }
-                                resolve(obj);
                             } else if(obj.state == 'syson' || obj.state == 'sysoff') {
                                 console.log('[DX] Event: ' + obj.state);
                                 this.isBtDisabled = obj.state == 'sysoff' ? true : false;
                                 //this.onSysEvent(obj.state);
+                                if( resolve && obj.state == 'syson' )
+                                {
+                                    resolve(obj);
+                                }
                                 typeof sysEvtCb(obj) !== 'undefined' && sysEvtCb(obj);
                             } else if(obj.state == 'sysreset') {
                                 console.log('[DX] BT system reset');
@@ -324,7 +328,9 @@ export class DataExchangerService {
                 cordova.plugin.dx.disconnect(
                     devUUID,
                     // Success (request sent)
-                    function(obj) {},
+                    function(obj) {
+                        resolve({"retCode":0,"status":"success"});
+                    },
                     // Failed
                     function(obj) {
                         console.log ('[DX] BT disconnect request error');
@@ -421,26 +427,28 @@ export class DataExchangerService {
     // firmBinaryData = firmware binary blob data
     // firmNameStr = firmware name
     //
-    primeDxFirmware(devUUID : string, firmBinaryData, firmNameStr, success, failure, progress) {
+    primeDxFirmware(devUUID : string, firmCode : string, firmBin : ArrayBuffer, firmName : string, success : (obj) => void, failure : (obj) => void, progress : (obj) => void) {
         this.platform.ready().then(() => {
             var params = {
                 uuid: devUUID == null ?this.deviceUUID :devUUID,
-                firmBin: firmBinaryData,
-                firmName: firmNameStr,
+                firmCode : firmCode,
+                firmBin: firmBin,
+                firmName: firmName,
                 ilCmd: null,
                 ilCnt: 0,
             };
     
             this.progress = 0;
     
-            console.log('[DX] priming BLE firmware ...');
+            console.log('[DX] priming DX firmware ...');
             cordova.plugin.dx.primeFirmwareBinary(
                 params.uuid,
+                params.firmCode,
                 params.firmBin,
                 params.firmName,
                 params.ilCmd,
                 params.ilCnt,
-                function(obj) {
+                (obj) => {
                     //success
                     if(!obj.isdone) {
                         /// report priming progress every 10%
@@ -452,19 +460,19 @@ export class DataExchangerService {
                     } else {
                         // priming completed
                         if(obj.status == 'OK') {
-                            // prime function is successful. But still need to verify the image integrity
-                            if(obj.metas.ImgIntegrity) {
-                                console.log('[DX] firmware priming is successful');
-                                typeof success(obj) !== 'undefined' && success(obj);
-                            } else {
-                                console.log('[DX] primed firmware integrity is negative');
-                                typeof failure(obj) !== 'undefined' && failure(obj);
-                            }
+                            // prime function is successful. 
+                            console.log('[DX] firmware priming successfull');
+                            typeof success(obj) !== 'undefined' && success(obj);
+                        }
+                        else
+                        {
+                            console.log('[DX] firmware priming failed');
+                            typeof failure(obj) !== 'undefined' && failure(obj);
                         }
                     }
                     // resolve(obj);
-                }.bind(this),
-                function(obj) {
+                },
+                (obj) => {
                     //failure
                     console.log('[DX] error priming FirmwareMeta');
                     console.log(obj);
@@ -475,60 +483,6 @@ export class DataExchangerService {
         });
     }
 
-    primeDxFirmwareFor8266(devUUID : string, firmBinaryData, firmNameStr, success, failure, progress) {
-        this.platform.ready().then(() => {
-            var params = {
-                uuid: devUUID == null ?this.deviceUUID :devUUID,
-                firmBin: firmBinaryData,
-                firmName: firmNameStr,
-                ilCmd: null,
-                ilCnt: 0,
-            };
-    
-            this.progress = 0;
-    
-            console.log('[DX] priming 8266 firmware ...');
-            cordova.plugin.dx.primeFirmwareBinaryFor8266(
-                params.uuid,
-                params.firmBin,
-                params.firmName,
-                params.ilCmd,
-                params.ilCnt,
-                function(obj) {
-                    //success
-                    if(!obj.isdone) {
-                        /// report priming progress every 10%
-                        obj.progress = Number(obj.progress * 10) / 10;
-                        if(obj.progress > this.progress) {
-                            this.progress = obj.progress;
-                            typeof progress(obj) !== 'undefined' && progress(obj);
-                        }
-                    } else {
-                        // priming completed
-                        if(obj.status == 'OK') {
-                            // prime function is successful. But still need to verify the image integrity
-                            if(obj.metas.ImgIntegrity) {
-                                console.log('[DX] firmware priming is successful');
-                                typeof success(obj) !== 'undefined' && success(obj);
-                            } else {
-                                console.log('[DX] primed firmware integrity is negative');
-                                typeof failure(obj) !== 'undefined' && failure(obj);
-                            }
-                        }
-                    }
-                    // resolve(obj);
-                }.bind(this),
-                function(obj) {
-                    //failure
-                    console.log('[DX] error priming FirmwareMeta');
-                    console.log(obj);
-                    typeof failure(obj) !== 'undefined' && failure(obj);
-                    // reject(obj);
-                }
-            );
-        });    
-    }
-
     // Switch DataExchanger BLE firmware to image stored in flash.
     // Upgrade procedure - prime, verify, switch
     //
@@ -536,17 +490,19 @@ export class DataExchangerService {
     // slotIndex = slot index in flash storage
     // firmNameStr = firmware name
     //
-    switchDxFirmware(devUUID : string, slotIndex, keepConfigData, failure) {
+    switchDxFirmware(devUUID : string, firmCode : string, slotIndex : number, keepConfigData : boolean) {
         return new Promise( (resolve, reject) => {
             this.platform.ready().then(() => {
                 var params = {
-                    uuid: this.deviceUUID,
+                    uuid: devUUID == null ?this.deviceUUID :devUUID,
+                    firmCode: firmCode,
                     slotIdx: slotIndex,
                     keepConfig: keepConfigData
                 };
     
                 cordova.plugin.dx.switchFirmwareToSlot(
                     params.uuid,
+                    params.firmCode,
                     params.slotIdx,
                     params.keepConfig,
                     function(obj) {

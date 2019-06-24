@@ -1,6 +1,9 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## V4 R5
+* merged with ionic-dx-providers-private ionic-v4 R8
+
 ## V4 R4
 * removed babylon.js
 

@@ -20,6 +20,8 @@ export namespace ATCMDHDLWIFI8266
         public atCmdWNET : AtCmdRec_WNET;
         public atCmdWCP : AtCmdRec_WCP;
         public atCmdWCON : AtCmdRec_WCON;
+        public atCmdWRDY : AtCmdRec_WRDY;
+        public atCmdWMAC : AtCmdRec_WMAC;
 
         constructor(
             uuid : string, 
@@ -45,6 +47,14 @@ export namespace ATCMDHDLWIFI8266
             // AT+WCON?
             this.atCmdWCON = new AtCmdRec_WCON(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdWCON, false);
+
+            // AT+WRDY
+            this.atCmdWRDY = new AtCmdRec_WRDY(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdWRDY, false);
+
+            // AT+WMAC?
+            this.atCmdWMAC = new AtCmdRec_WMAC(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdWMAC, false);
         }
     
         //
@@ -114,6 +124,15 @@ export namespace ATCMDHDLWIFI8266
                     });    
                 }).catch( ret => {
                     console.log("[" + cmd + "] sent failed");
+                    if( ret.retCode == -37 )
+                    {
+                        // Still AT+WCP=1
+                        // - wifi may have crashed
+                        // - force AT+WCP=0 so the scan retry will work
+                        this.setAutoConnect(false).then( ret => {
+                        }).catch( ret => {
+                        });
+                    }
                     reject({"retCode":-5,"status":"timeout expired"});
                     this.atCmdWSCANQ.updateInProgress = false;
                     this.atCmdWSCANQ.resolve = null;
@@ -150,6 +169,20 @@ export namespace ATCMDHDLWIFI8266
             });         
         }
 
+        public setupWifiCreditials( ssid : string, pwd : string ) : Promise<any>
+        {
+            var cmd = "AT+WIFI=" + ssid + "," + pwd;
+            return new Promise((resolve, reject) => {
+                this.sendCmd(cmd, this.seqId++).then( ret => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( ret => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":ret.retCode, "status":ret.status});
+                });
+            });         
+        }
+
         public disconnectWifi() : Promise<any>
         {
             var cmd = "AT+WSTOP";
@@ -162,6 +195,26 @@ export namespace ATCMDHDLWIFI8266
                     reject({"retCode":-1,"status":"timeout expired"});
                 });
             });         
+        }
+
+        public sendCustomCommand(cmd : string) : Promise<any>
+        {
+            return new Promise((resolve, reject) => {
+                this.sendCmd(cmd, this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });        
+        }
+
+        public sysReset() 
+        {
+            this.sendCmd("AT+RST", this.seqId++).then( ret => {
+            }).catch( ret => {
+            });
         }
 
 
@@ -239,13 +292,32 @@ export namespace ATCMDHDLWIFI8266
                 });
             }
 
-            var cmd = this.atCmdWNET.cmd;
             return new Promise((resolve, reject) => {
-                this.atCmdRefresh(cmd).then( obj => {
-                    console.log("[" + cmd + "] sent ok");
+                this.atCmdRefresh(this.atCmdWNET.cmd).then( obj => {
+                    console.log("[" + this.atCmdWNET.cmd + "] sent ok");
                     resolve(this.atCmdWNET.params);
                 }).catch( obj => {
-                    console.log("[" + cmd + "] sent failed");
+                    console.log("[" + this.atCmdWNET.cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });    
+            });        
+        }
+
+        public getWifiMacAddress( cache : boolean = true) : Promise<any>
+        {
+            if( cache && this.atCmdWMAC.cached )
+            {
+                return new Promise ((resolve, reject) => {
+                    resolve(this.atCmdWMAC.params);
+                });
+            }
+
+            return new Promise((resolve, reject) => {
+                this.atCmdRefresh(this.atCmdWMAC.cmd).then( ret => {
+                    console.log("[" + this.atCmdWMAC.cmd + "] sent ok");
+                    resolve(this.atCmdWMAC.params);
+                }).catch( ret => {
+                    console.log("[" + this.atCmdWMAC.cmd + "] sent failed");
                     reject({"retCode":-1,"status":"timeout expired"});
                 });
             });        
@@ -530,6 +602,79 @@ export namespace ATCMDHDLWIFI8266
             super.match(matchAry);
         }
     }
+
+
+    // AT+WRDY
+    //
+    export class AtCmdRec_WRDY extends ATCMDHDL.AtCmdRec 
+    {
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+WRDY', "AT\\+WRDY", cb, events);
+
+            // Enable broadcasr event
+            this.eventId = 'WIFI_RESET';
+        }
+
+        match(matchAry : any[]) 
+        {
+            // Set the parameter object for the callback
+            this.params = 
+            { 
+                "cmdRsp" : "+WNET:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+            };
+
+            // Always the last
+            super.match(matchAry);
+        }
+    }
+
+    //
+    // AT+WMAC?
+    //
+    export class AtCmdRec_WMAC extends ATCMDHDL.AtCmdRec 
+    {
+        public addr : string = "";
+
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+WMAC?', "(?:AT)?\\+WMAC\\:(.+)", cb, events);
+        }
+
+        match(matchAry : any[]) 
+        {
+            this.addr = matchAry[1].replace(/\:/g, '');
+
+            // Set the parameter object for the callback
+            this.params = 
+            { 
+                "cmdRsp" : "+WMAC:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "addr" : this.addr, 
+            };
+
+            // Always the last
+            super.match(matchAry);
+        }
+    }
+
+
+
 
 
     //

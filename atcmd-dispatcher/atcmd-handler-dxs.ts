@@ -5,7 +5,6 @@ import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-c
 export namespace ATCMDHDLDXS 
 {
     export class AtCmdHandler_DXS extends ATCMDHDLCOMMON.AtCmdHandler_COMMON {
-
         static createInstance(
             uuid : string, 
             name : string, 
@@ -39,9 +38,9 @@ export namespace ATCMDHDLDXS
 
     //
     // Register subclass with base class
-    // - this will allow AtCmdHandler to create an instance of AtCmdHandler_QCC_SRC
+    // - this will allow AtCmdHandler to create an instance of AtCmdHandler_DXS
     //
     ATCMDHDL.AtCmdHandler.registerSubClass('DXS', AtCmdHandler_DXS.createInstance)
 
-}  // namespace ATCMDHDLQCCSRC
+}  // namespace ATCMDHDLDXS
 

@@ -594,6 +594,18 @@ export namespace ATCMDHDL
             });
         }
 
+        // Empty AT-CMD queue
+        // - use to flush Q
+        flushSendQ()
+        {
+            if( this.huntForOkTimeout )
+            {
+                this.sendQ.length = 1;
+                this.handleSendCmdFailure(-400, "empty cmd queue");
+            }
+            this.resetSendQ();
+        }
+
         private sendCmdInternal()
         {
             var rec : CmdQRec = this.sendQ[0];

@@ -217,14 +217,6 @@ export namespace ATCMDHDLNULL
             {
                 this.className = "QCC_SNK";
             }
-            else if( this.firmCode == 'TRS' )
-            {
-                this.className = "BLE";
-            }
-            else if( this.firmCode == 'WFI' )
-            {
-                this.className = "WIFI";
-            }
             else
             {
                 this.className = this.firmCode;
