@@ -598,6 +598,11 @@ export class AtCmdDispatcherService {
         this.dx.primeDxFirmware(uuid, firmCode, firmBin, firmName, success, failure, progress);
     }
 
+    abortFirmware(uuid : string, firmCode : string) : Promise<any>
+    {
+        return this.dx.abortDxFirmware(uuid, firmCode);
+    }
+
     //
     // BLE Callbacks
     //
@@ -880,7 +885,7 @@ export class AtCmdDispatcherService {
             return;
         }
         
-        dataChHdl.appendData(obj.bytes);
+        dataChHdl.appendData(obj.bytes, obj.seqid);
 
         // Broadcast RX data received
         // - FIXME
@@ -896,7 +901,7 @@ export class AtCmdDispatcherService {
             return;
         }
         
-        cmdChHdl.appendData(obj.bytes);
+        cmdChHdl.appendData(obj.bytes, obj.seqid);
 
         // Broadcast RX cmd response received
         // - FIXME        

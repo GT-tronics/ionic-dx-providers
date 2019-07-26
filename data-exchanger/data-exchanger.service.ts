@@ -232,7 +232,17 @@ export class DataExchangerService {
                             //success
                             function(obj) {
                                 obj['bytes'] = this.base64ToBytes(obj.data.data);
-                                //console.log('[DX] RxData (' + data.length + ') and put into buffer: ' + this.rxDataBuffer);
+                                //console.log('[DX] RxData (' + obj.bytes.byteLength + ') and put into buffer: ' + this.rxDataBuffer);
+                                if( obj.data.seqid ==  null )
+                                {
+                                    // iOS doesn't implement seq id
+                                    // - force to 0
+                                    obj['seqid'] = 0;
+                                }
+                                else
+                                {
+                                    obj['seqid'] = obj.data.seqid;
+                                }
                                 typeof rxData(obj) !== 'undefined' && rxData(obj);
                             }.bind(this),
                             //failure
@@ -249,7 +259,17 @@ export class DataExchangerService {
                             // Success
                             function(obj) {
                                 obj['bytes'] = this.base64ToBytes(obj.data.data);
-                                //console.log('[DX] RxCmd (' + data.length + ') and put into buffer: ' + this.rxCmdBuffer);
+                                // console.log('[DX] RxCmd (' + obj.bytes.byteLength + ') and put into buffer: ' + this.rxCmdBuffer);
+                                if( obj.data.seqid ==  null )
+                                {
+                                    // iOS doesn't implement seq id
+                                    // - force to 0
+                                    obj['seqid'] = 0;
+                                }
+                                else
+                                {
+                                    obj['seqid'] = obj.data.seqid;
+                                }
                                 typeof rxCmdRsp(obj) !== 'undefined' && rxCmdRsp(obj);
                             }.bind(this),
                             function(obj) {
@@ -483,6 +503,35 @@ export class DataExchangerService {
         });
     }
 
+    abortDxFirmware(devUUID : string, firmCode : string) : Promise<any> {
+        return new Promise( (resolve, reject) => {
+            this.platform.ready().then(() => {
+                var params = {
+                    uuid: devUUID == null ?this.deviceUUID :devUUID,
+                    firmCode : firmCode,
+                };
+            
+                console.log('[DX] aborting DX firmware priming ...');
+                cordova.plugin.dx.abortFirmwarePriming(
+                    params.uuid,
+                    params.firmCode,
+                    (obj) => {
+                        //success
+                        // console.log('[DX] abort firmware priming successful');
+                        // console.log(obj);
+                        resolve(obj);
+                    },
+                    (obj) => {
+                        //failure
+                        // console.log('[DX] abort firmware priming failed');
+                        // console.log(obj);
+                        reject(obj);
+                    }
+                );
+            });
+        });
+    }
+
     // Switch DataExchanger BLE firmware to image stored in flash.
     // Upgrade procedure - prime, verify, switch
     //
@@ -490,7 +539,7 @@ export class DataExchangerService {
     // slotIndex = slot index in flash storage
     // firmNameStr = firmware name
     //
-    switchDxFirmware(devUUID : string, firmCode : string, slotIndex : number, keepConfigData : boolean) {
+    switchDxFirmware(devUUID : string, firmCode : string, slotIndex : number, keepConfigData : boolean) : Promise<any> {
         return new Promise( (resolve, reject) => {
             this.platform.ready().then(() => {
                 var params = {

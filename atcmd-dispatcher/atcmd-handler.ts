@@ -215,6 +215,8 @@ export namespace ATCMDHDL
         name : string;
         info : {};
         rxBuf : RxBuf;
+        rxSegs : any;
+        nextSeqId : number;
         rxLines : string[];
         sendCb : (uuid:string, data:string) => Promise<any>;
         events :  Events;
@@ -230,6 +232,8 @@ export namespace ATCMDHDL
             this.name = name;
             this.info = {};
             this.rxBuf = new RxBuf();
+            this.rxSegs = new Map();
+            this.nextSeqId = 0;
             this.rxLines = [];
             this.sendCb = sendCb;
             this.events = events;
@@ -257,8 +261,65 @@ export namespace ATCMDHDL
             }        
         }
 
-        appendData(data:ArrayBuffer) {
-            this.rxBuf.push(data);
+        private removeFromSequenceHolder(seqid : number)
+        {
+            // Push all sequential and contiguous segments in rxSegs to rxBuf
+            while(1)
+            {
+                seqid++;
+                var d = this.rxSegs.get(seqid);
+                if( d )
+                {
+                    console.log("appendData: resync [" + seqid + "]");
+                    this.rxBuf.push(d);
+                    this.rxSegs.clear(seqid);
+                    continue;
+                }
+                break;
+            }
+            this.nextSeqId = seqid;
+        }
+
+        appendData(data:ArrayBuffer, seqid : number) 
+        {
+            // console.log( "appendData: " + seqid);
+
+            // Don't check sequence if seqid is zero    
+            if( seqid > 0 )
+            {
+                // Cordova Android Packet Out-of-order
+                // - https://github.com/don/cordova-plugin-ble-central/issues/625
+                // - implement packet sequencing solution
+
+                if( this.nextSeqId == 0 )
+                {
+                    // Reset the segment holder
+                    // - assume seqid = 1 is always the 1st one
+                    this.rxSegs = new Map();
+                    this.nextSeqId = seqid;    
+                }
+    
+                if( seqid > this.nextSeqId )
+                {
+                    // Out of sequence
+                    // - push to holder 1st
+                    console.log("appendData: out-of-sequence [" + this.nextSeqId + "] [" + seqid + "]");
+                    this.rxSegs[seqid] = data;
+                }
+                else if( seqid == this.nextSeqId )
+                {
+                    this.rxBuf.push(data);
+                    this.removeFromSequenceHolder(seqid);
+                }
+                else
+                {
+                    console.log("appendData: ignore any previous sequence");
+                }
+            }
+            else
+            {
+                this.rxBuf.push(data);
+            }
         }
     }
 
@@ -391,10 +452,10 @@ export namespace ATCMDHDL
         // - find lines from rx buffer and match each registered command
         // - pace send commands by looking for OK/ERR for each sent command before sending next
         //
-        appendData(data:ArrayBuffer) {
+        appendData(data:ArrayBuffer, seqid:number) {
             // console.log("Before append");
             // console.log(this.rxBuf.utf8ToString());
-            super.appendData(data);
+            super.appendData(data, seqid);
             // console.log("After append");
             // console.log(this.rxBuf.utf8ToString());
 
@@ -422,7 +483,7 @@ export namespace ATCMDHDL
                 } else if (next !== null && next.byteLength > 0) {
                     // process linefeed terminated data chunk
                     var datastr = new TextDecoder().decode(dataBuf);
-                    // console.log('[' + this.name + '] rx full line: ' + datastr);
+                    console.log('[' + this.name + '] rx full line: ' + datastr);
                     this.rxLines.push(datastr);
                     if( this.enableLogging )
                     {
