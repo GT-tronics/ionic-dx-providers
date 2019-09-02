@@ -81,7 +81,7 @@ export class DataExchangerService {
         }).then( prompt => prompt.present());
     }
 
-    init(sysEvtCb : (obj) => void, useSpp : boolean) : Promise<any> {
+    init(sysEvtCb : (obj) => void, useSpp : boolean, uuids : string[]) : Promise<any> {
         return new Promise((resolve,reject)=>{
             this.platform.ready().then(() => {
                 // TODO: to remove after upgrading to Dx plugin that takes care of this
@@ -112,9 +112,7 @@ export class DataExchangerService {
                         true,       // enable command channel
                         false,      // enable scrambler
                         true,       // enable TX backpressure
-                        [
-                            // Insert your BLE Service UUID String
-                        ],
+                        uuids,
                         useSpp,
                         function(obj) {
                             // success
@@ -173,7 +171,7 @@ export class DataExchangerService {
                         obj.info.NAME != null &&
                         obj.info.RSSI != null && 
                         obj.state != null ) {
-                        console.log ('[DX] BT Scanned: ' + obj.info.NAME + '[' + obj.info.RSSI + ']' + '[' + obj.state + ']' );
+                        console.log ('[DX] BT Scanned: ' + obj.info.NAME + '[' + obj.info.RSSI + ']' + '[' + obj.state + ']' + '[' + obj.info.MFG + ']');
                         this.deviceUUID && console.log('[DX] already connected to UUID: ' + this.deviceUUID);
                         typeof success(obj) !== 'undefined' && success(obj);
                     }

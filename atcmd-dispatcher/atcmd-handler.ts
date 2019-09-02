@@ -272,7 +272,7 @@ export namespace ATCMDHDL
                 {
                     console.log("appendData: resync [" + seqid + "]");
                     this.rxBuf.push(d);
-                    this.rxSegs.clear(seqid);
+                    this.rxSegs.delete(seqid);
                     continue;
                 }
                 break;
@@ -304,7 +304,7 @@ export namespace ATCMDHDL
                     // Out of sequence
                     // - push to holder 1st
                     console.log("appendData: out-of-sequence [" + this.nextSeqId + "] [" + seqid + "]");
-                    this.rxSegs[seqid] = data;
+                    this.rxSegs.set(seqid, data);
                 }
                 else if( seqid == this.nextSeqId )
                 {
@@ -483,7 +483,7 @@ export namespace ATCMDHDL
                 } else if (next !== null && next.byteLength > 0) {
                     // process linefeed terminated data chunk
                     var datastr = new TextDecoder().decode(dataBuf);
-                    console.log('[' + this.name + '] rx full line: ' + datastr);
+                    // console.log('[' + this.name + '] rx full line: ' + datastr);
                     this.rxLines.push(datastr);
                     if( this.enableLogging )
                     {

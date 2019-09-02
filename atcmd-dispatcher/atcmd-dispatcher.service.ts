@@ -4,212 +4,10 @@ import { DataExchangerService } from '../../providers/data-exchanger/data-exchan
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
 import { ATCMDHDLNULL } from '../../providers/atcmd-dispatcher/atcmd-handler-null';
-import { ATCMDHDLGLOBAL } from '../../atcmd-handler-global';
+import { GLOBAL } from '../../global';
+import { DevState, BtDeviceInfo } from '../bt-device-info';
 
 declare var cordova: any;
-
-export interface GeneralInfo
-{
-    firmwareStatus : string;
-    firmwareStatusCode : number;
-    deviceId : string;
-    modelNo : string;
-    manufacturer : string;
-    swVer : string;
-    hwVer : string;
-    sysVer : string;
-    capability : string;
-}
-
-export enum DevState
-{
-    IDLE = 0,
-    CONNECTING,
-    CONNECTED,
-};
-
-export class BtDeviceInfo {
-    public uuid : string;
-    public name : string;
-    public customName : string;
-    public btClassicName : string;
-    public displayName : string;
-    public rssi : number;
-    public pinCode : number;
-    public active : boolean;
-    //public connected : boolean;
-    //public connecting : boolean;
-    public state : DevState;
-    public connectedStartDate : Date;
-    public connectedEndDate : Date;
-    public connectTimer : any;
-    public dxDiscoverTimer : any;
-    public promiseResolve : any;
-    public promiseReject : any;
-    public generalInfo : any;
-    public customInfo : any;
-
-    public dataChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
-    public cmdChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
-
-    constructor()
-    {
-        this.uuid = '';
-        this.name = '';
-        this.btClassicName = '';
-        this.displayName = '';
-        this.customName = null;
-        this.rssi = -127;
-        this.active = false;
-        this.pinCode = 0xFFFF;
-        //this.connecting = false;
-        //this.connected = false;
-        this.connectTimer = null;
-        this.dxDiscoverTimer = null;
-        this.connectedStartDate = null;
-        this.connectedEndDate = null;
-        this.promiseResolve = null;
-        this.promiseReject = null;
-        this.state = DevState.IDLE;
-        this.generalInfo = 
-        {
-            dataCh: this.setDefaultGeneralInfo(),
-            cmdCh: this.setDefaultGeneralInfo(),
-        };
-        this.customInfo = null;
-    }
-
-    clearConnectTimer()
-    {
-        if( this.connectTimer )
-        {
-            clearTimeout(this.connectTimer);
-            this.connectTimer = null;
-        }
-    }
-
-    setConnectTimer(callback : () => void, timeout : number)
-    {
-        this.clearConnectTimer();
-        this.connectTimer = setTimeout(callback, timeout);
-    } 
-
-    isConnected()
-    {
-        return (this.state == DevState.CONNECTED);
-    }
-
-    isIdle()
-    {
-        return (this.state == DevState.IDLE);
-    }
-
-    isConnecting()
-    {
-        return (this.state == DevState.CONNECTING);
-    }
-
-    private getChannelRemoteDeviceGeneralInfo(handler : ATCMDHDLCOMMON.AtCmdHandler_COMMON) : GeneralInfo
-    {
-        if( !handler )
-        {
-            return null;            
-        }
-
-        var params : GeneralInfo = null;
-        var di = handler.getDeviceInfo();
-        var vi = handler.getVersionInfo();
-
-        if( di && vi )
-        {
-            params = 
-            {
-                deviceId: di.deviceId,
-                modelNo: di.modelNo,
-                manufacturer: di.manufacturer,
-                swVer: vi.swVer,
-                hwVer: vi.hwVer,
-                sysVer: vi.sysVer,
-                capability: vi.capability,
-                firmwareStatus: "Up-to-date",
-                firmwareStatusCode: 0,
-            };
-        }
-
-        return params;
-    }
-
-    updateDataChannelRemoteDeviceGeneralInfo()
-    {
-        console.log("[Dispatcher] update data channel general info");
-        if( this.generalInfo.dataCh.deviceId == "Unknown" )
-        {
-            var info = this.getChannelRemoteDeviceGeneralInfo(this.dataChHandler);
-            if( !info )
-            {
-                setTimeout( () => {
-                    this.updateDataChannelRemoteDeviceGeneralInfo();
-                }, 5000);
-                return;
-            }
-
-            if( !this.generalInfo )
-            {
-                this.generalInfo = {};
-            }
-            if( !this.generalInfo.dataCh )
-            {
-                this.generalInfo['dataCh'] = {};
-            }
-            this.generalInfo.dataCh = info;
-        }
-    }
-
-    updateCommandChannelRemoteDeviceGeneralInfo()
-    {
-        console.log("[Dispatcher] update cmd channel general info");
-        if( this.generalInfo.cmdCh.deviceId == "Unknown" )
-        {
-            var info = this.getChannelRemoteDeviceGeneralInfo(this.cmdChHandler);
-            if( !info )
-            {
-                setTimeout( () => {
-                    this.updateCommandChannelRemoteDeviceGeneralInfo();
-                }, 5000);
-                return;
-            }
-
-            if( !this.generalInfo )
-            {
-                this.generalInfo = {};
-            }
-            if( !this.generalInfo.cmdCh )
-            {
-                this.generalInfo['cmdCh'] = {};
-            }
-            this.generalInfo.cmdCh = info;
-        }
-    }
-
-    private setDefaultGeneralInfo() : any 
-    {
-      var generalInfo : GeneralInfo = 
-      {
-        firmwareStatus : 'Up-to-date',
-        firmwareStatusCode : 0,
-        deviceId : "Unknown",
-        modelNo : "Unknown",
-        manufacturer : "Unknown",
-        swVer : "Unknown",
-        hwVer : "Unknown",
-        sysVer : "Unknown",
-        capability : "Unknown",
-      };
-  
-      return generalInfo;
-    }
-  
-}
 
 interface Map<T> {
     [s : string] : T;
@@ -247,6 +45,7 @@ export class AtCmdDispatcherService {
     private scanSuccessCb : (obj) => void;
     private scanFailureCb : (obj) => void;
     private sysEvtCb    : (obj) => void;
+    private options : any;
 
     private state : SysState = SysState.sysoff;
     private restartScan : boolean = false;
@@ -268,19 +67,20 @@ export class AtCmdDispatcherService {
         this.btDevLinkedList = <BtDeviceInfoMap>{};
         
         // Instantiate ATCMD handler sub classes via AtCmdHandlerGlobal
-        ATCMDHDLGLOBAL.AtCmdHandler_GLOBAL.registerAllSubClasses();
+        GLOBAL.AtCmdHandler_GLOBAL.registerAllSubClasses();
     }
 
     //
     // Initialization
     //
 
-    init(sysEvtCb : (obj) => void, useSpp : boolean = true) : Promise<any> 
+    init(sysEvtCb : (obj) => void, opt : any = {useSpp : true, useDataCh : false, enableDxSec : true, uuids : ["231fc15a-0d6f-4e66-94c7-eb0d30ace6b0"]}) : Promise<any> 
     {
         return new Promise((resolve, reject) => {
             console.log("[Dispatcher] initiating DX ...");
             this.sysEvtCb = sysEvtCb;
-            this.dx.init(this.sysEventCallback.bind(this), useSpp).catch((obj)=> {
+            this.options = opt;
+            this.dx.init(this.sysEventCallback.bind(this), opt.useSpp, opt.uuids).catch((obj)=> {
               console.log("[Dispatcher] init failed");
               console.log(obj);
             }).then((obj) => {
@@ -357,7 +157,12 @@ export class AtCmdDispatcherService {
         {
             values.push(this.btDevLinkedList[key]);
         }
-        return values;
+        return values.sort( (a,b) => { return a.orderIdx - b.orderIdx; });
+    }
+
+    getLinkedDevicesByUuid(uuid : string) : BtDeviceInfo 
+    {
+        return this.btDevLinkedList[uuid];
     }
 
     getUnlinkDevices() : BtDeviceInfo[] 
@@ -666,7 +471,7 @@ export class AtCmdDispatcherService {
             {
                 // not exist anywhere
                 // - add it into the unlink list
-                var newDevInfo : BtDeviceInfo = new BtDeviceInfo();
+                var newDevInfo : BtDeviceInfo = GLOBAL.DevInfo.createInstance();
                 newDevInfo.name = obj.info.NAME;
                 newDevInfo.uuid = obj.info.UUID;
                 newDevInfo.rssi = obj.info.RSSI;
@@ -709,18 +514,21 @@ export class AtCmdDispatcherService {
         }
         cmdChHandler.notifyConnected();
 
-        // Locate AT-CMD handler for data channel
-        // - notify connect
-        // - if new, create a null handler 1st
-        // - null handler will determine how to create the correct AT-CMD handler eventually
-        // var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
-        // if( !dataChHandler )
-        // {
-        //     dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this));
-        //     this.dataChHandlerList[devInfo.uuid] = dataChHandler
-        // }
-
-        // dataChHandler.notifyConnected();
+        if( this.options.useDataCh )
+        {
+            // Locate AT-CMD handler for data channel
+            // - notify connect
+            // - if new, create a null handler 1st
+            // - null handler will determine how to create the correct AT-CMD handler eventually
+            var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
+            if( !dataChHandler )
+            {
+                dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this));
+                this.dataChHandlerList[devInfo.uuid] = dataChHandler
+            }
+    
+            dataChHandler.notifyConnected();
+        }
     }
 
     connectSuccessCallback(obj) 
