@@ -22,6 +22,9 @@ export namespace ATCMDHDLWIFI8266
         public atCmdWCON : AtCmdRec_WCON;
         public atCmdWRDY : AtCmdRec_WRDY;
         public atCmdWMAC : AtCmdRec_WMAC;
+        public atCmdAZON : AtCmdRec_AZON;
+        public atCmdWAZC : AtCmdRec_WAZC;
+        public atCmdWCLT : AtCmdRec_WCLT;
 
         constructor(
             uuid : string, 
@@ -55,6 +58,18 @@ export namespace ATCMDHDLWIFI8266
             // AT+WMAC?
             this.atCmdWMAC = new AtCmdRec_WMAC(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdWMAC, false);
+
+            // AT+AZON?
+            this.atCmdAZON = new AtCmdRec_AZON(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdAZON, false);
+
+            // AT+WAZC?
+            this.atCmdWAZC = new AtCmdRec_WAZC(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdWAZC, false);
+
+            // AT+WCLT?
+            this.atCmdWCLT = new AtCmdRec_WCLT(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdWCLT, false);
         }
     
         //
@@ -217,6 +232,184 @@ export namespace ATCMDHDLWIFI8266
             });
         }
 
+        public clearWifiCredentialsThenReset() : Promise<any>
+        {
+            return new Promise((resolve, reject) => {
+                this.sendCmd("AT+WIFI=,", this.seqId++).then( obj => {
+                    console.log("[AT+WIFI=,] sent ok");
+                    this.sendCmd("AT+WCP=0", this.seqId++).then( obj => {
+                        console.log("[AT+WCP=0] sent ok");
+                        this.sysReset();
+                        resolve({"retCode":0,"status":"success"});
+                    }).catch( obj => {
+                        console.log("[AT+WCP=0] sent failed");
+                        reject({"retCode":-2,"status":"timeout expired"});
+                    });    
+                }).catch( obj => {
+                    console.log("[AT+WIFI=,] sent failed");
+                    reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });        
+        }
+
+        public async scanAndFixProvisioning(provisionTable : any)
+        {
+            var tempStr = provisionTable.cloudTemplateString;
+
+            // Find template from provision table
+            if( tempStr === undefined || tempStr === null )
+            {
+                console.log("undefined cloudTemplateString");
+                // Can't find template string in provision table
+                throw {"retCode":-1,"status":"template string no found in provision table"};
+            }
+
+            try {
+                var templateRef = JSON.parse(tempStr);
+            }
+            catch(err)
+            {
+                console.log("corrupted cloudTemplateString");
+                throw {"retCode":-2,"status":"supplied template string corrupted"};
+            }
+
+            const wifiMac = await this.getWifiMacAddress();
+            // console.log("Got mac address");
+
+            // Verify connection string
+            await this.verifyConnectionString(provisionTable, wifiMac.addr);
+
+            // Verify cloud template string
+            await this.verifyCloudTemplateString(templateRef);
+
+            return ({retCode:0,status:"success"});  
+        }
+
+        public async verifyConnectionString(provisionTable : any, macAddr : string, loopCnt : number = 2)
+        {
+            try {
+                this.atCmdWAZC.params = {};
+                await this.atCmdRefresh(this.atCmdWAZC.cmd);
+            }
+            catch(err){}
+
+            console.log("sent " + this.atCmdWAZC.cmd);
+            var endpoint = this.atCmdWAZC.params['endpoint'];
+            var devId = this.atCmdWAZC.params['devId'];
+            // console.log("endpoint: " + endpoint);
+            // console.log("devId: " + devId);
+            if( endpoint === undefined || devId === undefined ||
+                !endpoint.includes("azure-devices.net")  || 
+                !devId.includes("WiBlue-IoT") )
+            {   
+                // Invalid WAZC. Need reprovisioning
+                console.log("Invalid " + this.atCmdWAZC.cmd);
+                devId = "WiBlue-IoT1-" + macAddr;
+                var connStr = provisionTable.connStrs[devId];
+                if( connStr === undefined || connStr === null )
+                {
+                    console.log(devId + " connStr not found");
+                    // Can't find provision record
+                    throw {"retCode":-3,"status":"provison record no found"};
+                }
+
+                var cmd = "AT+WAZC=" + connStr;
+                try {
+                    await this.sendCmd(cmd, this.seqId++);
+                    console.log("sent AT+WAZC=...");
+                } catch(err)
+                {
+                    if( loopCnt == 0 )
+                    {
+                        throw {retCode:-4,status:"fail to write connecting string"};
+                    }
+                    else
+                    {
+                        console.log("fail to send AT+WAZC=.... Retry");
+                    }
+                }
+                    
+                if( loopCnt > 0 )
+                {
+                    await this.verifyConnectionString(provisionTable, macAddr, loopCnt - 1);
+                }
+            }
+        }
+
+        public async verifyCloudTemplateString(templateRef : any, loopCnt : number = 2)
+        {
+            await this.atCmdRefresh(this.atCmdWCLT.cmd);
+            console.log("sent " + this.atCmdWCLT.cmd);
+            var template = this.atCmdWCLT.params['template'];
+            if( template === undefined || template === null )
+            {
+                // Invalid WCLT. Need reprovisioning
+                console.log("invalid WCLT string");
+
+                // update WCLT
+                await this.updateCloudTemplateString(template);
+                if( loopCnt > 0 )
+                {
+                    await this.verifyCloudTemplateString(templateRef, loopCnt - 1);
+                }
+            }
+            else
+            {
+                // Valid WCLT. Now verify against the template string in provision table
+
+                if( !this.deepEqual(templateRef, template) )
+                {
+                    // update WCLT
+                    console.log("unmatch WCLK string");
+                    await this.updateCloudTemplateString(templateRef);
+
+                    if( loopCnt > 0 )
+                    {
+                        await this.verifyCloudTemplateString(templateRef, loopCnt - 1);
+                    }
+                }
+            }
+
+            // Matched. No need to anything
+            return({"retCode":0,"status":"success"});
+        }
+
+        private deepEqual(x : any, y : any) : boolean
+        {
+            const ok = Object.keys, tx = typeof x, ty = typeof y;
+            return x && y && tx === 'object' && tx === ty ? (
+              ok(x).length === ok(y).length &&
+                ok(x).every(key => this.deepEqual(x[key], y[key]))
+            ) : (x === y);
+        }
+
+        public updateCloudTemplateString(template : any) : Promise<any>
+        {
+            return new Promise( async (resolve, reject) => {
+                var keys = Object.keys(template);
+                var isStart : boolean = true;
+    
+                try {
+                    for( var i=0; i < keys.length; i++ )
+                    {
+                        var pair : any = {};
+                        var key = keys[i];
+                        pair[key] = template[key];
+                        var pairStr = JSON.stringify(pair);
+                        var cmd = "AT+WCLT=" + (isStart ?'0,' :'1,') + pairStr;
+                        await this.sendCmd(cmd, this.seqId++);
+                        console.log("sent " + cmd);
+                        isStart = false;
+                    }
+                    resolve({retCode:0,status:"success"});    
+                }
+                catch(e)
+                {
+                    console.log("fail to write template string segment");
+                    reject({retCdode:-1,status:"write template string segment failed"});
+                }
+            });
+        }
 
         //
         // Setters
@@ -322,6 +515,7 @@ export namespace ATCMDHDLWIFI8266
                 });
             });        
         }
+
     }
 
     interface Map<T> {
@@ -673,6 +867,119 @@ export namespace ATCMDHDLWIFI8266
         }
     }
 
+    //
+    // AT+AZON:
+    //
+    export class AtCmdRec_AZON extends ATCMDHDL.AtCmdRec 
+    {
+        public connected : boolean = false;
+
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+AZON?', "(?:AT)?\\+AZON\\:(.+)", cb, events);
+
+            // Enable broadcasr event
+            this.eventId = 'CLOUD_STATUS_CHANGED';
+        }
+
+        match(matchAry : any[]) 
+        {
+            this.connected = (matchAry[1] == '1' ?true :false);
+
+            // Set the parameter object for the callback
+            this.params = 
+            { 
+                "cmdRsp" : "+AZON:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "connected" : this.connected, 
+            };
+
+            // Always the last
+            super.match(matchAry);
+        }
+    }
+
+
+    //
+    // AT+WAZC?
+    //
+
+    export class AtCmdRec_WAZC extends ATCMDHDL.AtCmdRec 
+    {
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+WAZC?', "(?:AT)?\\+WAZC\\:(.+),(.+)", cb, events);
+        }
+
+        match(matchAry : any[]) 
+        {
+            // Set the parameter object for the callback
+            this.params = 
+            { 
+                "cmdRsp" : "+WAZC:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "endpoint" : matchAry[1], 
+                "devId" : matchAry[2], 
+            };
+
+            // Always the last
+            super.match(matchAry);
+        }
+    }
+
+    //
+    // AT+WCLT?
+    //
+    
+    export class AtCmdRec_WCLT extends ATCMDHDL.AtCmdRec 
+    {
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+WCLT?', "(?:AT)?\\+WCLT\\:(.*)", cb, events);
+        }
+
+        match(matchAry : any[]) 
+        {
+            var template : any = null;
+            try {
+                template = JSON.parse(matchAry[1]);
+            }
+            catch(err)
+            {
+            }
+            // Set the parameter object for the callback
+            this.params = 
+            { 
+                "cmdRsp" : "+WCLT:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "template" : template, 
+            };
+
+            // Always the last
+            super.match(matchAry);
+        }
+    }
 
 
 

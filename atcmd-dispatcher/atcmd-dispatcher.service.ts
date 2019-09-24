@@ -77,15 +77,15 @@ export class AtCmdDispatcherService {
     init(sysEvtCb : (obj) => void, opt : any = {useSpp : true, useDataCh : false, enableDxSec : true, uuids : ["231fc15a-0d6f-4e66-94c7-eb0d30ace6b0"]}) : Promise<any> 
     {
         return new Promise((resolve, reject) => {
-            console.log("[Dispatcher] initiating DX ...");
+            console.log("[DISPATCHER] initiating DX ...");
             this.sysEvtCb = sysEvtCb;
             this.options = opt;
             this.dx.init(this.sysEventCallback.bind(this), opt.useSpp, opt.uuids).catch((obj)=> {
-              console.log("[Dispatcher] init failed");
+              console.log("[DISPATCHER] init failed");
               console.log(obj);
             }).then((obj) => {
               if( obj.state == 'init' ) {
-                console.log("[Dispatcher] init success");
+                console.log("[DISPATCHER] init success");
                 // Reset device lists
                 this.btDevLinkedList = <BtDeviceInfoMap>{};
                 this.btDevUnlinkList = <BtDeviceInfoMap>{};
@@ -186,7 +186,7 @@ export class AtCmdDispatcherService {
             this.scanSuccessCallback.bind(this),
             // failure
             ((obj) => {
-                console.log("[Dispatcher] scan failed");
+                console.log("[DISPATCHER] scan failed");
                 //console.log(obj);
                 return this.scanFailureCb({"retCode":-1,"status":obj.ErrMsg});
             }).bind(this)
@@ -443,7 +443,7 @@ export class AtCmdDispatcherService {
             this.dx.stopScan();
         }
 
-        //console.log("[Dispatcher] SysEvt: " + obj.state);
+        //console.log("[DISPATCHER] SysEvt: " + obj.state);
         this.sysEvtCb(obj);
     }
     
@@ -475,6 +475,7 @@ export class AtCmdDispatcherService {
                 newDevInfo.name = obj.info.NAME;
                 newDevInfo.uuid = obj.info.UUID;
                 newDevInfo.rssi = obj.info.RSSI;
+                newDevInfo.mfg = obj.info.MFG;
                 newDevInfo.active = true;
     
                 this.btDevUnlinkList[obj.info.UUID] = newDevInfo;
@@ -485,6 +486,7 @@ export class AtCmdDispatcherService {
                 devInfo.active = true;
                 devInfo.name = obj.info.NAME;
                 devInfo.rssi = obj.info.RSSI;
+                devInfo.mfg = obj.info.MFG;
                 this.scanSuccessCb(obj);
             }
         }
@@ -534,7 +536,7 @@ export class AtCmdDispatcherService {
     connectSuccessCallback(obj) 
     {
         if( obj.state == 'connected' ) {
-            console.log("[Dispatcher] " + obj.info.UUID + " connected");
+            console.log("[DISPATCHER] " + obj.info.UUID + " connected");
             console.log(obj);
 
             var devInfo : BtDeviceInfo;
@@ -548,7 +550,7 @@ export class AtCmdDispatcherService {
                 devInfo = this.btDevUnlinkList[obj.info.UUID];
                 if( !devInfo ) {
                     // FIXME: any special handling??
-                    console.log("[Dispatcher] " + obj.info.UUID + " forced disconnected [1]");
+                    console.log("[DISPATCHER] " + obj.info.UUID + " forced disconnected [1]");
                     this.disconnect(obj.info.UUID);
                     return;
                 }
@@ -565,7 +567,7 @@ export class AtCmdDispatcherService {
                 // - should not happen but just in case
                 // - disconnect
                 //devInfo.connected = false;
-                console.log("[Dispatcher] " + obj.info.UUID + " forced disconnected [2] state=" + devInfo.state + (isLinked ?" linked" :"unlink"));
+                console.log("[DISPATCHER] " + obj.info.UUID + " forced disconnected [2] state=" + devInfo.state + (isLinked ?" linked" :"unlink"));
                 // console.log( devInfo );
                 this.disconnect(devInfo.uuid);
                 devInfo.state = DevState.IDLE;
@@ -578,9 +580,6 @@ export class AtCmdDispatcherService {
 
             //devInfo.connected = true;
             //devInfo.connecting = false;
-            devInfo.state = DevState.CONNECTED;
-            devInfo.connectedStartDate = new Date;
-            devInfo.connectedEndDate = null;
 
             if( !isLinked )
             {
@@ -594,16 +593,21 @@ export class AtCmdDispatcherService {
             devInfo.clearConnectTimer();
 
             {
+                devInfo.state = DevState.CONNECTED;
+                devInfo.connectedStartDate = new Date;
+                devInfo.connectedEndDate = null;
+
                 // Library doesn't support security
                 // - just create and run the NULL handlers
                 this.createAndRunNullHandlers(devInfo);
+
+                // Notify the connect's promise that the device is now connected
+                devInfo.promiseResolve({"retCode":0,"status":"success"});            
             }
 
-            // Notify the connect's promise that the device is now connected
-            devInfo.promiseResolve({"retCode":0,"status":"success"});            
         }
         else if( obj.state == 'disconnected' ) {
-            console.log("[Dispatcher] " + obj.info.UUID + " disconnected");
+            console.log("[DISPATCHER] " + obj.info.UUID + " disconnected");
             //console.log(obj);
 
             var devInfo : BtDeviceInfo;
@@ -643,7 +647,7 @@ export class AtCmdDispatcherService {
             // Don't generation notification if it was not connected
             if( wasConnected )
             {
-                console.log("[Dispatcher] removing AT-CMD handlers for [" + devInfo.uuid + "] ... ");
+                console.log("[DISPATCHER] removing AT-CMD handlers for [" + devInfo.uuid + "] ... ");
 
                 var cmdH : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
                 var dataH : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
@@ -774,7 +778,7 @@ export class AtCmdDispatcherService {
         // if( !newHandler )
         // {
         //     // FIXME: anything special handling??
-        //     console.log("[Dispatcher]: can't create data handler [" + className + "]");
+        //     console.log("[DISPATCHER]: can't create data handler [" + className + "]");
         //     return false;
         // }
         // newHandler.constructor.apply(newHandler, devInfo.uuid, className, this.sendDxData.bind(this));
@@ -841,7 +845,7 @@ export class AtCmdDispatcherService {
         // if( !newHandler )
         // {
         //     // FIXME: anything special handling??
-        //     console.log("[Dispatcher]: can't create cmd handler [" + className + "]");
+        //     console.log("[DISPATCHER]: can't create cmd handler [" + className + "]");
         //     return false;
         // }
         // newHandler.constructor.apply(newHandler, [devInfo.uuid, className, this.sendDxCmd.bind(this)]);

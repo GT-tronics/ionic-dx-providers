@@ -33,8 +33,12 @@ export class BtDeviceInfo {
     public btClassicName : string;
     public displayName : string;
     public rssi : number;
+    public mfg : string;
     public pinCode : number;
     public isPinSetup : boolean;
+    public regId : number;
+    public isRegIdRevoked : boolean;
+    public isRegIdSupported : boolean;
     public active : boolean;
     public orderIdx : number;
     //public connected : boolean;
@@ -48,6 +52,7 @@ export class BtDeviceInfo {
     public promiseReject : any;
     public generalInfo : any;
     public customInfo : any;
+    public scratchPad : any;
 
     public dataChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
     public cmdChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
@@ -63,6 +68,9 @@ export class BtDeviceInfo {
         this.active = false;
         this.pinCode = 0xFFFF;
         this.isPinSetup = false;
+        this.regId = 0xFFFFFFFF;
+        this.isRegIdRevoked = false;
+        this.isRegIdSupported = false;
         this.orderIdx = -1;
         //this.connecting = false;
         //this.connected = false;
@@ -143,15 +151,18 @@ export class BtDeviceInfo {
 
     updateDataChannelRemoteDeviceGeneralInfo()
     {
-        console.log("[Dispatcher] update data channel general info");
+        console.log("[BT-DEVICE] update data channel general info");
         if( this.generalInfo.dataCh.deviceId == "Unknown" )
         {
             var info = this.getChannelRemoteDeviceGeneralInfo(this.dataChHandler);
             if( !info )
             {
-                setTimeout( () => {
-                    this.updateDataChannelRemoteDeviceGeneralInfo();
-                }, 5000);
+                if( this.isConnected() )
+                {
+                    setTimeout( () => {
+                        this.updateDataChannelRemoteDeviceGeneralInfo();
+                    }, 5000);
+                }
                 return;
             }
 
@@ -169,15 +180,18 @@ export class BtDeviceInfo {
 
     updateCommandChannelRemoteDeviceGeneralInfo()
     {
-        console.log("[Dispatcher] update cmd channel general info");
+        console.log("[BT-DEVICE] update cmd channel general info");
         if( this.generalInfo.cmdCh.deviceId == "Unknown" )
         {
             var info = this.getChannelRemoteDeviceGeneralInfo(this.cmdChHandler);
             if( !info )
             {
-                setTimeout( () => {
-                    this.updateCommandChannelRemoteDeviceGeneralInfo();
-                }, 5000);
+                if( this.isConnected() )
+                {
+                    setTimeout( () => {
+                        this.updateCommandChannelRemoteDeviceGeneralInfo();
+                    }, 5000);
+                }
                 return;
             }
 
@@ -221,6 +235,9 @@ export class BtDeviceInfo {
         json['rssi'] = this.rssi;
         json['pinCode'] = this.pinCode;
         json['isPinSetup'] = this.isPinSetup;
+        json['regId'] = this.regId;
+        json['isRegIdRevoked'] = this.isRegIdRevoked;
+        json['isRegIdSupported'] = this.isRegIdSupported;
         json['orderIdx'] = this.orderIdx;
         json['generalInfo'] = !this.generalInfo ?{} :this.generalInfo;
         json['customInfo'] = !this.customInfo ?{} :this.customInfo;
@@ -240,6 +257,9 @@ export class BtDeviceInfo {
         this.rssi = json.rssi;
         this.pinCode = json.pinCode;
         this.isPinSetup = json.isPinSetup;
+        this.regId = json.regId;
+        this.isRegIdRevoked = json.isRegIdRevoked;
+        this.isRegIdSupported = json.isRegIdSupported;
         this.orderIdx = json.orderIdx;
         this.generalInfo = json.generalInfo;
         this.customInfo = json.customInfo;

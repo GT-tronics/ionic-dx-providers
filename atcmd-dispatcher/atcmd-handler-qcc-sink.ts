@@ -1312,7 +1312,7 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+PDL?', "\\+PDL\\:(-?[0-9]+)(?:,(.+),([0-9]+),(0x[0-9a-fA-F]+),(0x[0-9a-fA-F]+),([0-9]+),([0-9]),(.+))?", cb, events);
+            super(uuid, 'AT+PDL?', "(?:AT)?\\+PDL\\:(-?[0-9]+)(?:,(.+),([0-9]+),(0x[0-9a-fA-F]+),(0x[0-9a-fA-F]+),([0-9]+),([0-9]),(.+))?", cb, events);
             this.pdlRecAryMap = <PdlRecMap>{};
             this.updateInProgress = false;
 
@@ -1519,7 +1519,7 @@ export namespace ATCMDHDLQCCSNK {
     //         events : Events
     //     )
     //     {
-    //         super(uuid, 'AT+RNQ=', "\\+RNQ\\:(.+),([0-9]+),(.+)", cb, events);
+    //         super(uuid, 'AT+RNQ=', "(?:AT)?\\+RNQ\\:(.+),([0-9]+),(.+)", cb, events);
     //     }
 
     //     match(matchAry : any[]) 
@@ -1560,7 +1560,7 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+DN?', "\\+DN\\:(.*),(.*)", cb, events);
+            super(uuid, 'AT+DN?', "(?:AT)?\\+DN\\:(.*),(.*)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -1614,7 +1614,7 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+DCQ=', "\\+DCQ\\:(.+),(.+)", cb, events);
+            super(uuid, 'AT+DCQ=', "(?:AT)?\\+DCQ\\:(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -1717,7 +1717,7 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+DS?', "\\+DS\\:([0-9]+),([0-9]+),([0-9]+)", cb, events);
+            super(uuid, 'AT+DS?', "(?:AT)?\\+DS\\:([0-9]+),([0-9]+),([0-9]+)", cb, events);
             this.deviceState = DeviceState.IDLE;
             this.deviceStateStrs = ["IDLE", "CONNECTABLE", "DISCOVERABLE", "CONNECTED", "OUTGOING_CALL_ESTABLISH", "INCOMING_CALL_ESTABLISH", "ACTIVE_CALL", "TEST", "TWC_WAIT", "TWC_ON_HOLD", "TWC_MULTI_CALL", "INCOMING_CALL_ON_HOLD", "ACTIVE_CALL_NO_SCO", "A2DP_STREAMING", "IN_CONFIG_MODE"];
  
@@ -1762,7 +1762,7 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+PP?', "\\+PP\\:(.+)", cb, events);
+            super(uuid, 'AT+PP?', "(?:AT)?\\+PP\\:(.+)", cb, events);
             this.playState = PlayState.PAUSE;
         }
 
@@ -1798,7 +1798,7 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+VL?', "\\+VL\\:(.+)", cb, events);
+            super(uuid, 'AT+VL?', "(?:AT)?\\+VL\\:(.+)", cb, events);
             this.vol = 0;
 
             // Enable broadcast
@@ -1839,7 +1839,7 @@ export namespace ATCMDHDLQCCSNK {
             events : Events
         )
         {
-            super(uuid, 'AT+CC?', "\\+CC\\:(.+),([0-9]),([0-9]+)", cb, events);
+            super(uuid, 'AT+CC?', "(?:AT)?\\+CC\\:(.+),([0-9]),([0-9]+)", cb, events);
             this.mask = 0;
             this.codecStrs = ["SBC", "MP3", "AAC", "APTX", "APTX-LL", "FASTSTREAM"];
         }
@@ -1888,7 +1888,7 @@ export namespace ATCMDHDLQCCSNK {
             // Notification only
             // - there is no AT+CR? command.
             // - but will set that anyways
-            super(uuid, 'AT+CR?', "\\+CR\\:(.+),([0-9]+),([0-9]+),([0-9]+)", cb, events);
+            super(uuid, 'AT+CR?', "(?:AT)?\\+CR\\:(.+),([0-9]+),([0-9]+),([0-9]+)", cb, events);
             this.addr = null;
             this.action = null;
             this.codecCode = -1;
@@ -1939,7 +1939,7 @@ export namespace ATCMDHDLQCCSNK {
             // Notification only
             // - there is no AT+CR? command.
             // - but will set that anyways
-            super(uuid, 'AT+RSQ=', "\\+RSQ\\:([0-9]+),(.+),(.+)", cb, events);
+            super(uuid, 'AT+RSQ=', "(?:AT)?\\+RSQ\\:([0-9]+),(.+),(.+)", cb, events);
  
             // Enable broadcast
             this.eventId = "QCC_SNK_RSSI_CHANGED";
@@ -1985,7 +1985,7 @@ export namespace ATCMDHDLQCCSNK {
             // Notification only
             // - there is no AT+CR? command.
             // - but will set that anyways
-            super(uuid, 'AT+EQB?', "\\+EQB\\:(.+),(.+)", cb, events);
+            super(uuid, 'AT+EQB?', "(?:AT)?\\+EQB\\:(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -2028,7 +2028,7 @@ export namespace ATCMDHDLQCCSNK {
             // Notification only
             // - there is no AT+CR? command.
             // - but will set that anyways
-            super(uuid, 'AT+EQC?', "\\+EQC\\:(.+),(.+),(.+)", cb, events);
+            super(uuid, 'AT+EQC?', "(?:AT)?\\+EQC\\:(.+),(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -2072,7 +2072,7 @@ export namespace ATCMDHDLQCCSNK {
             // Notification only
             // - there is no AT+CR? command.
             // - but will set that anyways
-            super(uuid, 'AT+EQPQ=', "\\+EQPQ\\:(.+),(.+)", cb, events);
+            super(uuid, 'AT+EQPQ=', "(?:AT)?\\+EQPQ\\:(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -2114,7 +2114,7 @@ export namespace ATCMDHDLQCCSNK {
             // Notification only
             // - there is no AT+CR? command.
             // - but will set that anyways
-            super(uuid, 'AT+TMQ=', "\\+TMQ\\:(.+),(.+)", cb, events);
+            super(uuid, 'AT+TMQ=', "(?:AT)?\\+TMQ\\:(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 

@@ -502,7 +502,7 @@ export namespace ATCMDHDL
                 // Hunt for OK or ERR for send response
                 if( this.huntForOk )
                 {
-                    var re = new RegExp('(?:(OK)|ERR=(-?[0-9]+))');
+                    var re = new RegExp('^(?:AT\\+)?(?:(OK)|ERR=(-?[0-9]+))');
                     var m = re.exec(line);
                     var retCode : number = -1000;
 
@@ -523,13 +523,17 @@ export namespace ATCMDHDL
                         this.huntForOkTimeout = null;
     
                         var rec : CmdQRec = this.sendQ.shift();
-                        if( retCode != 0 )
+                        // console.log("[" + this.name + "] cmd: " + JSON.stringify(rec));
+                        if( rec )
                         {
-                            rec.reject({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
-                        }
-                        else
-                        {
-                            rec.resolve({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
+                            if( retCode != 0 )
+                            {
+                                rec.reject({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
+                            }
+                            else
+                            {
+                                rec.resolve({"cmd" : rec.cmd, "signature" : rec.signature, "retCode" : -retCode, "status" : this.atCmdErrCodeStr[retCode]});
+                            }
                         }
 
                         if( this.sendQ.length > 0 && this.ready)
@@ -568,10 +572,10 @@ export namespace ATCMDHDL
                     }
                 }
 
-                if( !hit )
-                {
-                    this.unrecognizedLines.push(line);
-                }
+                // if( !hit )
+                // {
+                //     this.unrecognizedLines.push(line);
+                // }
             }
         }
 
@@ -627,7 +631,7 @@ export namespace ATCMDHDL
             return new Promise( (resolve, reject) => {
                 if( this.initSending )
                 {
-                    this.handleSendCmdFailure(-1, "busy");
+                    reject({"cmd" : cmd, "signature" : signature, "retCode" : -1, "status" : "busy"});
                 }
                 else
                 {
@@ -840,7 +844,7 @@ export namespace ATCMDHDL
         // - use this.params to fill up the return data to the callback
         //
         match(matchAry : any[]) {
-            console.log("--- matched ---");
+            console.log("[" + this.handler.name + "] --- matched --- [" + matchAry[0] + "]");
             this.cached = true;
             this.cb(this.params);
 

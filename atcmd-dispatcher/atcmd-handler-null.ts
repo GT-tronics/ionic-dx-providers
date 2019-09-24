@@ -106,9 +106,9 @@ export namespace ATCMDHDLNULL
                 this.atCmdKY.resolve = resolve;
                 this.atCmdKY.reject = reject;
                 this.sendCmdAtInitStage(this.atCmdKY.cmd, this.atCmdKY.seqId++, 2000).then( ret => {
-                    console.log("[" + cmd + "] sent ok");
+                    console.log('[' + this.name + '] sent AT+KY ok');
                 }).catch( ret => {
-                    console.log("[" + cmd + "] sent failed");
+                    console.log('[' + this.name + '] sent AT+KY failed [' + ret.status + ']');
                     reject(ret);
                     this.atCmdKY.resolve = null;
                     this.atCmdKY.reject = null;

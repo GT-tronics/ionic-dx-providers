@@ -1072,7 +1072,7 @@ export namespace ATCMDHDLQCCSRC
             events : Events
         )
         {
-            super(uuid, 'AT+PDL?', "\\+PDL\\:(-?[0-9]+)(?:,(.+),([0-9]+),(0x[0-9a-fA-F]+),(0x[0-9a-fA-F]+),([0-9]+),([0-9]+),(.*))?", cb, events);
+            super(uuid, 'AT+PDL?', "(?:AT)?\\+PDL\\:(-?[0-9]+)(?:,(.+),([0-9]+),(0x[0-9a-fA-F]+),(0x[0-9a-fA-F]+),([0-9]+),([0-9]+),(.*))?", cb, events);
             this.pdlRecAryMap = <PdlRecMap>{};
         }
 
@@ -1223,7 +1223,7 @@ export namespace ATCMDHDLQCCSRC
             events : Events
         )
         {
-            super(uuid, 'AT+DS?', "\\+DS\\:([0-9]+)", cb, events);
+            super(uuid, 'AT+DS?', "(?:AT)?\\+DS\\:([0-9]+)", cb, events);
             this.deviceState = DeviceState.INIT;
             this.deviceStateStrs = ["INIT", "PWR_OFF", "TEST", "IDLE", "CONNECTABLE", "DISCOVERABLE", "CONNECTING", "INQUIRING", "CONNECTED", "CONFIG"];
  
@@ -1264,7 +1264,7 @@ export namespace ATCMDHDLQCCSRC
             events : Events
         )
         {
-            super(uuid, 'AT+CC?', "\\+CC\\:(.+)", cb, events);
+            super(uuid, 'AT+CC?', "(?:AT)?\\+CC\\:(.+)", cb, events);
             this.mask = 0;
         }
 
@@ -1305,7 +1305,7 @@ export namespace ATCMDHDLQCCSRC
             // Notification only
             // - there is no AT+CR? command.
             // - but will set that anyways
-            super(uuid, 'AT+CR?', "\\+CR\\:([0-9]+),([0-9]+)", cb, events);
+            super(uuid, 'AT+CR?', "(?:AT)?\\+CR\\:([0-9]+),([0-9]+)", cb, events);
             this.connCount = 0;
             this.codecCode = -1;
             this.codecStrs = ["UNKNOWN", "SBC", "FASTSTREAM", "APTX", "APTX-LL", "APTX-HD"];
@@ -1357,7 +1357,7 @@ export namespace ATCMDHDLQCCSRC
             events : Events
         )
         {
-            super(uuid, 'AT+VLQ=', "\\+VLQ\\:([0-9]+),([0-9]+),([0-9]+)", cb, events);
+            super(uuid, 'AT+VLQ=', "(?:AT)?\\+VLQ\\:([0-9]+),([0-9]+),([0-9]+)", cb, events);
             this.vol1 = 255;
             this.vol1 = 255;
 
@@ -1416,7 +1416,7 @@ export namespace ATCMDHDLQCCSRC
             events : Events
         )
         {
-            super(uuid, 'AT+PDLU?', "\\+PDLU\\:(.+)", cb, events);
+            super(uuid, 'AT+PDLU?', "(?:AT)?\\+PDLU\\:(.+)", cb, events);
 
             // Enable broadcast
             this.eventId = "QCC_SRC_PDL_CHANGED";
@@ -1473,7 +1473,7 @@ export namespace ATCMDHDLQCCSRC
             events : Events
         )
         {
-            super(uuid, 'AT+DCQ=', "\\+DCQ\\:(.+),(.+)", cb, events);
+            super(uuid, 'AT+DCQ=', "(?:AT)?\\+DCQ\\:(.+),(.+)", cb, events);
         }
 
         match(matchAry : any[]) 
@@ -1616,7 +1616,7 @@ export namespace ATCMDHDLQCCSRC
             events : Events
         )
         {
-            super(uuid, 'AT+SCAN', "\\+SCAN\\:(-?[0-9]+)(?:,(.+),([0-9]+),([0-9]+),([0-9]+),(.*))?", cb, events);
+            super(uuid, 'AT+SCAN', "(?:AT)?\\+SCAN\\:(-?[0-9]+)(?:,(.+),([0-9]+),([0-9]+),([0-9]+),(.*))?", cb, events);
             this.scanRecsMap = <ScanRecsMap>{};
             this.refreshScan = false;
             this.enableInterimResultReporting = false;

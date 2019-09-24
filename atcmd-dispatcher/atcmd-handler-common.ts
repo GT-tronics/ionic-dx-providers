@@ -67,7 +67,7 @@ export namespace ATCMDHDLCOMMON
         //
         setEcho( on : boolean ) : Promise<any>
         {
-            var cmd = "AT+EC=" + (on ?1 :0);
+            var cmd = "AT+EC=" + (on ?1 :2);
             return new Promise((resolve, reject) => {
                 this.sendCmdAtInitStage(cmd, this.seqId++).then( params => {
                     console.log("[" + cmd + "] sent ok");
