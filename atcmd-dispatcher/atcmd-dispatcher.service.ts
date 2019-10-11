@@ -408,6 +408,11 @@ export class AtCmdDispatcherService {
         return this.dx.abortDxFirmware(uuid, firmCode);
     }
 
+    switchFirmware(uuid : string, firmCode : string, slotIdx : number, keepConfig : boolean) : Promise<any>
+    {
+        return this.dx.switchDxFirmware(uuid, firmCode, slotIdx, keepConfig);        
+    }
+
     //
     // BLE Callbacks
     //
