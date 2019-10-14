@@ -1,6 +1,9 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+## V4 R10
+* merged with ionic-dx-providers-private ionic-v4 R19
+
 ## V4 R9
 * merged with ionic-dx-providers-private ionic-v4 R18
 

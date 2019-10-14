@@ -22,7 +22,6 @@ export class DataExchangerService {
     rxDataBuffer: any;
     dxDataList: any;
     rxLastDate: any;
-    progress: any;
     rxCmdBuffer: any;
     dxCmdList: any;
     receiveCmdForceStopTime: any;
@@ -59,7 +58,6 @@ export class DataExchangerService {
         this.rxCmdBuffer = null;
         this.dxDataList = [];
         this.dxCmdList = [];
-        this.progress = null;
         this.readyDelayTimeout = null;
 
         var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -455,9 +453,7 @@ export class DataExchangerService {
                 ilCmd: null,
                 ilCnt: 0,
             };
-    
-            this.progress = 0;
-    
+        
             console.log('[DX] priming DX firmware ...');
             cordova.plugin.dx.primeFirmwareBinary(
                 params.uuid,
@@ -469,12 +465,7 @@ export class DataExchangerService {
                 (obj) => {
                     //success
                     if(!obj.isdone) {
-                        /// report priming progress every 10%
-                        obj.progress = Number(obj.progress * 10) / 10;
-                        if(obj.progress > this.progress) {
-                            this.progress = obj.progress;
-                            typeof progress(obj) !== 'undefined' && progress(obj);
-                        }
+                        typeof progress(obj) !== 'undefined' && progress(obj);
                     } else {
                         // priming completed
                         if(obj.status == 'OK') {
