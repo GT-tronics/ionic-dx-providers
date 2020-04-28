@@ -1,6 +1,13 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+# V5 R1
+* branched from V4 R11
+* added the changes to support ionic v5
+    * Events is no longer supported in @ionic/angular
+    * added custom evetns.ts with compatible API
+    * only declaration is required to change in each component which use Events
+
 # V4 R11
 * merged with ionic-dx-providers-private ionic-v4 R27
 

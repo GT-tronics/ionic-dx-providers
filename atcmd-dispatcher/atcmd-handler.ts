@@ -1,4 +1,4 @@
-import { Events } from '@ionic/angular';
+import { Events } from '../events';
 
 export namespace ATCMDHDL 
 {

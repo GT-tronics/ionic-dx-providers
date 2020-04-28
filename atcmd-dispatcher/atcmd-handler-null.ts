@@ -1,4 +1,4 @@
-import { Events } from '@ionic/angular';
+import { Events } from '../events';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { DataExchangerService } from '../../providers/data-exchanger/data-exchanger.service';
 

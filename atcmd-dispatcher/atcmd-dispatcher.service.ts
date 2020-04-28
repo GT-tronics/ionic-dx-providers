@@ -1,5 +1,5 @@
 import { Injectable } from "@angular/core";
-import { Platform, Events } from '@ionic/angular';
+import { Platform } from '@ionic/angular';
 import { Storage } from '@ionic/storage';
 
 import { DataExchangerService } from '../../providers/data-exchanger/data-exchanger.service';
@@ -8,6 +8,7 @@ import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-c
 import { ATCMDHDLNULL } from '../../providers/atcmd-dispatcher/atcmd-handler-null';
 import { GLOBAL } from '../../global';
 import { DevState, BtDeviceInfo } from '../bt-device-info';
+import { Events } from '../events';
 
 declare var cordova: any;
 
