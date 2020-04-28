@@ -9,7 +9,7 @@ export namespace ATCMDHDLWIFI8266
         static createInstance(
             uuid : string, 
             name : string, 
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events 
         ) : ATCMDHDL.AtCmdHandler
         {
@@ -25,11 +25,13 @@ export namespace ATCMDHDLWIFI8266
         public atCmdAZON : AtCmdRec_AZON;
         public atCmdWAZC : AtCmdRec_WAZC;
         public atCmdWCLT : AtCmdRec_WCLT;
+        public atCmdWUPG : AtCmdRec_WUPG;
+        public atCmdTRSS : AtCmdRec_TRSS;
 
         constructor(
             uuid : string, 
             name : string,
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events
         ) 
         {
@@ -60,7 +62,7 @@ export namespace ATCMDHDLWIFI8266
             this.addAtCmdRecToParser(this.atCmdWMAC, false);
 
             // AT+AZON?
-            this.atCmdAZON = new AtCmdRec_AZON(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.atCmdAZON = new AtCmdRec_AZON(this.uuid, this.atCmdRspCallback_AZON.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdAZON, false);
 
             // AT+WAZC?
@@ -70,6 +72,14 @@ export namespace ATCMDHDLWIFI8266
             // AT+WCLT?
             this.atCmdWCLT = new AtCmdRec_WCLT(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdWCLT, false);
+
+            // AT+WUPG? (notification only)
+            this.atCmdWUPG = new AtCmdRec_WUPG(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdWUPG, false);
+
+            // AT+TRSS=
+            this.atCmdTRSS = new AtCmdRec_TRSS(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdTRSS, false);
         }
     
         //
@@ -86,12 +96,21 @@ export namespace ATCMDHDLWIFI8266
                 this.atCmdWSCANQ.resolve(params);
                 this.atCmdWSCANQ.resolve = null;
             }
-            if( params.retCode < 0 && this.atCmdWSCANQ.reject )
+            else if( params.retCode < 0 && this.atCmdWSCANQ.reject )
             {
                 this.atCmdWSCANQ.reject(params);
                 this.atCmdWSCANQ.reject = null;
             }
         }
+
+        private atCmdRspCallback_AZON( params )
+        {
+            if( params.connected && this.atCmdWUPG.upgradeInProgress )
+            {
+                this.atCmdWUPG.wifiReset();
+            }
+        }
+
 
         //
         // Support Functions
@@ -276,11 +295,11 @@ export namespace ATCMDHDLWIFI8266
             const wifiMac = await this.getWifiMacAddress();
             // console.log("Got mac address");
 
-            // Verify connection string
-            await this.verifyConnectionString(provisionTable, wifiMac.addr);
-
             // Verify cloud template string
             await this.verifyCloudTemplateString(templateRef);
+
+            // Verify connection string
+            await this.verifyConnectionString(provisionTable, wifiMac.addr);
 
             return ({retCode:0,status:"success"});  
         }
@@ -296,16 +315,31 @@ export namespace ATCMDHDLWIFI8266
             console.log("sent " + this.atCmdWAZC.cmd);
             var endpoint = this.atCmdWAZC.params['endpoint'];
             var devId = this.atCmdWAZC.params['devId'];
-            // console.log("endpoint: " + endpoint);
-            // console.log("devId: " + devId);
+            //console.log("endpoint: " + endpoint);
+            //console.log("devId: " + devId);
             if( endpoint === undefined || devId === undefined ||
                 !endpoint.includes("azure-devices.net")  || 
-                !devId.includes("WiBlue-IoT") )
+                !devId.includes("WiBlue-IoT1") )
             {   
                 // Invalid WAZC. Need reprovisioning
                 console.log("Invalid " + this.atCmdWAZC.cmd);
+
+                // Need to handle IoTx
+                // var connStr : string = null;
+                // for( var i = 1; i < 100; i++)
+                // {
+                //     devId = "WiBlue-IoT" + i + "-" + macAddr;
+                //     //console.log( devId );
+                //     connStr = provisionTable.connStrs[devId];
+                //     if( connStr !== undefined && connStr !== null )
+                //     {
+                //         break;
+                //     }
+                // }
+
                 devId = "WiBlue-IoT1-" + macAddr;
                 var connStr = provisionTable.connStrs[devId];
+
                 if( connStr === undefined || connStr === null )
                 {
                     console.log(devId + " connStr not found");
@@ -316,7 +350,8 @@ export namespace ATCMDHDLWIFI8266
                 var cmd = "AT+WAZC=" + connStr;
                 try {
                     await this.sendCmd(cmd, this.seqId++);
-                    console.log("sent AT+WAZC=...");
+                    // Mark reprovisioned
+                    this.atCmdWAZC.setReprovisioned();
                 } catch(err)
                 {
                     if( loopCnt == 0 )
@@ -334,6 +369,12 @@ export namespace ATCMDHDLWIFI8266
                     await this.verifyConnectionString(provisionTable, macAddr, loopCnt - 1);
                 }
             }
+
+            // Mark WCLT string verified
+            this.atCmdWAZC.setVerified();
+
+            // Matched. No need to anything
+            return({"retCode":0,"status":"success"});            
         }
 
         public async verifyCloudTemplateString(templateRef : any, loopCnt : number = 2)
@@ -347,7 +388,7 @@ export namespace ATCMDHDLWIFI8266
                 console.log("invalid WCLT string");
 
                 // update WCLT
-                await this.updateCloudTemplateString(template);
+                await this.updateCloudTemplateString(templateRef);
                 if( loopCnt > 0 )
                 {
                     await this.verifyCloudTemplateString(templateRef, loopCnt - 1);
@@ -360,8 +401,11 @@ export namespace ATCMDHDLWIFI8266
                 if( !this.deepEqual(templateRef, template) )
                 {
                     // update WCLT
-                    console.log("unmatch WCLK string");
+                    console.log("unmatch WCLT string");
                     await this.updateCloudTemplateString(templateRef);
+                    
+                    // Mark WCLT reprovisioned
+                    this.atCmdWCLT.setReprovisioned();
 
                     if( loopCnt > 0 )
                     {
@@ -369,6 +413,9 @@ export namespace ATCMDHDLWIFI8266
                     }
                 }
             }
+
+            // Mark WCLT string verified
+            this.atCmdWCLT.setVerified();
 
             // Matched. No need to anything
             return({"retCode":0,"status":"success"});
@@ -409,6 +456,75 @@ export namespace ATCMDHDLWIFI8266
                     reject({retCdode:-1,status:"write template string segment failed"});
                 }
             });
+        }
+
+        public isReprovisionedSuccessfully() : boolean
+        {
+            if( this.atCmdWAZC.isReprovisioned() && this.atCmdWAZC.isVerified() &&
+                this.atCmdWCLT.isReprovisioned() && this.atCmdWCLT.isVerified() )
+            {
+                return true;
+            }
+            return false;
+        }
+
+        public isProvisioningInvalid() : boolean
+        {
+            if( !this.atCmdWAZC.isVerified() || !this.atCmdWCLT.isVerified() )
+            {
+                return true;
+            }
+            return false;
+        }
+
+        public async startFirmwareUpgrade(fp : string, url : string, cb : (stage : number, percentComplete : number, abort? : boolean) => void)
+        {
+            if( this.atCmdWUPG.upgradeInProgress )
+            {
+                return({"retCode":-4,"status":"busy"});
+            }
+
+            var cmd;
+            
+            // Set finger print
+            cmd = "AT+WUPGF=" + fp;
+            try
+            {
+                await this.sendCmd(cmd, this.seqId++);
+            }
+            catch(err)
+            {
+                // AT+WUPGF is not supported for wifi firmware equal or older than 0.9.8
+                // - just ignore and continue
+            }
+
+            // Set progress callback
+            if( cb )
+            {
+                this.atCmdWUPG.startUpgrade(0, cb);
+            }
+
+            // Start upgrade progress
+            cmd = "AT+WUPG=1234," + url;
+            await this.sendCmd(cmd, this.seqId++);
+
+            return({"retCode":0,"status":"success"});
+        }
+
+        public abortFirmwareUpgrade()
+        {
+            this.atCmdWUPG.terminateUpgrade();
+        }
+
+        public async verifyFirmwareUpgrade(ver : string)
+        {
+            await this.atCmdRefresh(this.atCmdVS.cmd);
+
+            if( ver != this.atCmdVS.swVer )
+            {
+                throw({"retCode":-1,"status":"version incorrect","swVer":this.atCmdVS.swVer});
+            }
+            return({"retCode":0,"status":"success"});
         }
 
         //
@@ -808,7 +924,7 @@ export namespace ATCMDHDLWIFI8266
             events : Events
         )
         {
-            super(uuid, 'AT+WRDY', "AT\\+WRDY", cb, events);
+            super(uuid, 'AT+WRDY', "(?:AT)?\\+WRDY", cb, events);
 
             // Enable broadcasr event
             this.eventId = 'WIFI_RESET';
@@ -819,7 +935,7 @@ export namespace ATCMDHDLWIFI8266
             // Set the parameter object for the callback
             this.params = 
             { 
-                "cmdRsp" : "+WNET:",
+                "cmdRsp" : "+WRDY",
                 "uuid" : this.uuid,
                 "seqId" : this.seqId,
                 "retCode" : 0,
@@ -913,6 +1029,9 @@ export namespace ATCMDHDLWIFI8266
 
     export class AtCmdRec_WAZC extends ATCMDHDL.AtCmdRec 
     {
+        private reprovisioned = false;
+        private verified = false;
+        
         constructor(
             uuid : string,
             cb : ( obj : {} ) => void,
@@ -939,6 +1058,30 @@ export namespace ATCMDHDLWIFI8266
             // Always the last
             super.match(matchAry);
         }
+
+        isReprovisioned()
+        {
+            var provisoned = this.reprovisioned
+            this.reprovisioned = false;
+            return provisoned;
+        }
+
+        setReprovisioned()
+        {
+            this.reprovisioned = true;
+        }
+
+        isVerified()
+        {
+            var verified = this.verified
+            this.verified = false;
+            return verified;
+        }
+
+        setVerified()
+        {
+            this.verified = true;
+        }
     }
 
     //
@@ -947,6 +1090,9 @@ export namespace ATCMDHDLWIFI8266
     
     export class AtCmdRec_WCLT extends ATCMDHDL.AtCmdRec 
     {
+        private reprovisioned = false;
+        private verified = false;
+
         constructor(
             uuid : string,
             cb : ( obj : {} ) => void,
@@ -979,10 +1125,197 @@ export namespace ATCMDHDLWIFI8266
             // Always the last
             super.match(matchAry);
         }
+
+        isReprovisioned()
+        {
+            var provisoned = this.reprovisioned
+            this.reprovisioned = false;
+            return provisoned;
+        }
+
+        setReprovisioned()
+        {
+            this.reprovisioned = true;
+        }
+
+        isVerified()
+        {
+            var verified = this.verified
+            this.verified = false;
+            return verified;
+        }
+
+        setVerified()
+        {
+            this.verified = true;
+        }
     }
 
+    //
+    // AT+WUPG? (Notification Only)
+    //
+    
+    export class AtCmdRec_WUPG extends ATCMDHDL.AtCmdRec 
+    {
+        public upgradeInProgress = false;
+        private progressCb : (stage : number, percentComplete : number, abort? : boolean) => void = null;
+        private writtenSz : number = 0;
+        private startStage : number = 0;
+        private currStage : number = 0;
 
+        private errReasonList = 
+        {
+            "-100" : "HTTP_UE_TOO_LESS_SPACE",
+            "-101" : "HTTP_UE_SERVER_NOT_REPORT_SIZE",
+            "-102" : "HTTP_UE_SERVER_FILE_NOT_FOUND",
+            "-103" : "HTTP_UE_SERVER_FORBIDDEN",
+            "-104" : "HTTP_UE_SERVER_WRONG_HTTP_CODE",
+            "-105" : "HTTP_UE_SERVER_FAULTY_MD5",
+            "-106" : "HTTP_UE_BIN_VERIFY_HEADER_FAILED",
+            "-107" : "HTTP_UE_BIN_FOR_WRONG_FLASH",
+        }
 
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+WUPG?', "(?:AT)?\\+WUPG\\:(-?[0-9]+)(?:,([0-9]+),([0-9]+))?", cb, events);
+        }
+
+        match(matchAry : any[]) 
+        {
+            var code = +matchAry[1];
+
+            // Set the parameter object for the callback
+            this.params = 
+            { 
+                "cmdRsp" : "+WUPG:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "reason" : "",
+                "stage" : 0,
+                "percentComplete" : 0
+            };
+
+            if( code < 0 )
+            {
+                // Error
+                this.params["retCode"] = -1;
+                this.params["status"] = "download err";
+                this.params["reason"] = this.errReasonList[code.toString()];
+                this.progressCb(this.startStage + this.currStage, 0, true);
+                this.terminateUpgrade();
+            }
+            else if( code == 0 )
+            {
+                // Started
+                if( this.progressCb )
+                {
+                    this.progressCb(this.startStage + this.currStage, 0);
+                }
+                this.currStage++;
+                this.params["stage"] = this.currStage;
+                this.params["percentComplete"] = 0;
+            }
+            else if( code == 1 )
+            {
+                // Download in progress
+                var writtenSz : number = +matchAry[2];
+                var totalSz : number = +matchAry[3];
+                var percentComplete = Math.round(writtenSz/totalSz * 100.0);
+
+                this.params["percentComplete"] = percentComplete;
+
+                if( writtenSz > this.writtenSz && this.progressCb )
+                {
+                    this.writtenSz = writtenSz;
+                    this.progressCb(this.startStage + this.currStage, percentComplete);
+                }
+            }
+            else if( code == 2 )
+            {
+                // Switching firmware
+                this.params["stage"] = ++this.currStage;
+                this.params["percentComplete"] = 0;
+                if( this.progressCb )
+                {
+                    this.progressCb(this.startStage + this.currStage, 0);
+                }
+            }
+        }
+
+        wifiReset()
+        {
+            if( this.upgradeInProgress )
+            {
+                if( this.progressCb )
+                {
+                    if( this.currStage == 2 )
+                    {
+                        this.currStage++;
+                        this.progressCb(this.startStage + this.currStage, 0);
+                    }
+                    else
+                    {
+                        this.progressCb(this.startStage + this.currStage, 0, true);
+                    }
+                }
+                this.terminateUpgrade();
+            }
+        }
+
+        terminateUpgrade()
+        {
+            this.progressCb = null;
+            this.upgradeInProgress = false;
+        }
+
+        startUpgrade( startStage : number, cb : (stage : number, percentComplete : number, abort? : boolean) => void)
+        {
+            this.upgradeInProgress = true;
+            this.progressCb = cb;
+            this.startStage = startStage;
+            this.currStage = 0;
+        }
+
+    }
+
+    //
+    // AT+TRSS=
+    //
+    
+    export class AtCmdRec_TRSS extends ATCMDHDL.AtCmdRec 
+    {
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+TRSS=', "AT\\+TRSS=.+", cb, events);
+
+            // Enable broadcasr event
+            this.eventId = 'CLOUD_FULL_CMD';
+        }
+
+        match(matchAry : any[]) 
+        {
+            this.params = 
+            { 
+                "cmdRsp" : "+TRSS=",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "fullCmd" : matchAry[0],
+            };
+            super.match(matchAry);
+        }
+    }
 
     //
     // Register subclass with base class

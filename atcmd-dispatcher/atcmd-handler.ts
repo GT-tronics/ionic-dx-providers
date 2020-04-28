@@ -4,7 +4,7 @@ export namespace ATCMDHDL
 {
     export interface LogLine
     {
-        timeStamp : Date;
+        timeStamp : number;
         textLine : string;
     }
 
@@ -189,17 +189,17 @@ export namespace ATCMDHDL
     export class AtCmdHandler {
 
         // global stuff
-        static nmCodeClassCreateMap : { [code : string] : (uuid : string, name : string, sendCb : (uuid:string, data:string) => Promise<any>, events : Events ) => AtCmdHandler } = 
+        static nmCodeClassCreateMap : { [code : string] : (uuid : string, name : string, sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>, events : Events ) => AtCmdHandler } = 
         {
         };
-        static registerSubClass( code : string, fnCb : (uuid : string, name : string, sendCb : (uuid:string, data:string) => Promise<any>, event : Events ) => AtCmdHandler)
+        static registerSubClass( code : string, fnCb : (uuid : string, name : string, sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>, event : Events ) => AtCmdHandler)
         {
             console.log("[AtCmdHandler] register subclass [" + code + "]");
             AtCmdHandler.nmCodeClassCreateMap[code] = fnCb;
         }
-        static createSubClassInstance(code : string, uuid : string, name : string, sendCb : (uuid:string, data:string) => Promise<any>, events : Events ) : AtCmdHandler 
+        static createSubClassInstance(code : string, uuid : string, name : string, sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>, events : Events ) : AtCmdHandler 
         {
-            var createInstanceFnCb : (uuid : string, name : string, sendCb : (uuid:string, data:string) => Promise<any>, events : Events ) => AtCmdHandler;
+            var createInstanceFnCb : (uuid : string, name : string, sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>, events : Events ) => AtCmdHandler;
             createInstanceFnCb = AtCmdHandler.nmCodeClassCreateMap[code];
             if( !createInstanceFnCb )
             {
@@ -213,18 +213,18 @@ export namespace ATCMDHDL
         // member variables
         uuid : string;
         name : string;
-        info : {};
+        info : any;
         rxBuf : RxBuf;
         rxSegs : any;
         nextSeqId : number;
         rxLines : string[];
-        sendCb : (uuid:string, data:string) => Promise<any>;
+        sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>;
         events :  Events;
 
         constructor( 
             uuid : string, 
             name : string, 
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events
         ) 
         {
@@ -232,11 +232,27 @@ export namespace ATCMDHDL
             this.name = name;
             this.info = {};
             this.rxBuf = new RxBuf();
-            this.rxSegs = new Map();
-            this.nextSeqId = 0;
             this.rxLines = [];
             this.sendCb = sendCb;
             this.events = events;
+
+            // Workaround on a strange bug
+            // - if reset() is called here, it seems to cause a "silent" exception
+            // - not sure reset() will call the subclass here.
+            // - the workaround is to not call reset() but a function which shares with reset()
+            this._resetNeedToDo();
+        }
+
+        // Subclass function to reset its state machine
+        public reset()
+        {
+            this._resetNeedToDo();
+        }
+
+        private _resetNeedToDo()
+        {
+            this.rxSegs = new Map();
+            this.nextSeqId = 0;    
         }
 
         notifyConnected() {
@@ -244,9 +260,7 @@ export namespace ATCMDHDL
             if( this.events != null )
             {
                 console.log("----connected----");
-                setTimeout(() => {
-                    this.events.publish("BT_DEV_CHANGED", { 'action' : 'connect', 'name' : this.name, 'uuid' : this.uuid, 'info' : this.info });
-                }, 0);
+                this.events.publish("BT_DEV_CHANGED", { 'action' : 'connect', 'name' : this.name, 'uuid' : this.uuid, 'info' : this.info });
             }        
         }
 
@@ -255,9 +269,7 @@ export namespace ATCMDHDL
             if( this.events != null )
             {
                 console.log("----disconnected----");
-                setTimeout(() => {
-                    this.events.publish("BT_DEV_CHANGED", { 'action' : 'disconnect', 'name' : this.name, 'uuid' : this.uuid, 'info' : this.info });
-                }, 0);
+                this.events.publish("BT_DEV_CHANGED", { 'action' : 'disconnect', 'name' : this.name, 'uuid' : this.uuid, 'info' : this.info });
             }        
         }
 
@@ -313,7 +325,7 @@ export namespace ATCMDHDL
                 }
                 else
                 {
-                    console.log("appendData: ignore any previous sequence");
+                    console.log("appendData: ignore any previous sequence [" + this.nextSeqId + "] [" + seqid + "]");
                 }
             }
             else
@@ -411,7 +423,7 @@ export namespace ATCMDHDL
         constructor(
             uuid : string, 
             name : string,
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events
         ) 
         {
@@ -428,6 +440,13 @@ export namespace ATCMDHDL
             this.enableLogging = false;
             this.logLines = [];
         }
+
+        // Reset the state machine
+        public reset()
+        {
+            super.reset();
+            this.resetSendQ();
+        }        
 
         //
         // Register AT-CMD record 
@@ -468,6 +487,9 @@ export namespace ATCMDHDL
 
             this.rxBuf.reset();
             
+            var lastLogLineIdx = this.logLines.length;
+            var currLogLineIdx = this.logLines.length;
+
             for (var i = 0; i < dataBufs.length; i++) {
                 var dataBuf = dataBufs[i];
                 var next = ((i + 1) == dataBufs.length) ? null : dataBufs[i];
@@ -487,11 +509,23 @@ export namespace ATCMDHDL
                     this.rxLines.push(datastr);
                     if( this.enableLogging )
                     {
-                        this.logLines.push({timeStamp : new Date(), textLine : datastr});
+                        this.logLines.push({timeStamp : Date.now(), textLine : datastr});
+                        currLogLineIdx++;
                     }
                 } else {
                     // last datestr is empty/null, i.e. the previous one is residue
                 }
+            }
+
+            if( this.enableLogging && currLogLineIdx > lastLogLineIdx)
+            {
+                var params : any =
+                {
+                    hdl : this,
+                    startIdx : currLogLineIdx,
+                    endIdx : lastLogLineIdx
+                }
+                this.events.publish('ATCMDHDL_TEXT_MORE_LOGS', params);
             }
 
             while( this.rxLines.length > 0 )
@@ -850,9 +884,7 @@ export namespace ATCMDHDL
 
             if( this.events != null && this.eventId != null && this.eventId != '' )
             {
-                setTimeout(() => {
-                    this.events.publish(this.eventId, this.params);
-                }, 0);
+                this.events.publish(this.eventId, this.params);
             }
         }
     }

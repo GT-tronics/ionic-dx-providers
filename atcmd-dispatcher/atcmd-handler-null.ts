@@ -13,6 +13,9 @@ export namespace ATCMDHDLNULL
         private terminateConnectionCb : (uuid:string, info:any) => void;
         private dx : DataExchangerService;
 
+        private pinCode : number;
+        private skipAuth : boolean;
+
         constructor(
             uuid : string, 
             pinCode : number,
@@ -20,7 +23,7 @@ export namespace ATCMDHDLNULL
             skipAuth : boolean,
             events : Events,
             dx : DataExchangerService,
-            sendCb : (uuid:string, data:string) => Promise<any>, 
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>, 
             upgradeCb : (uuid:string, className:string) => boolean,
             terminateConnectionCb : (uuid:string, info:any) => void,
         ) 
@@ -42,14 +45,31 @@ export namespace ATCMDHDLNULL
             this.atCmdKY = new AtCmdRec_KY(this.uuid, this.atCmdRspCallback_KY.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdKY, false);
 
+            this.pinCode = pinCode;
+            this.skipAuth = skipAuth;
+
+            // Workaround on a potential but strange bug found in AtCmdHandler class
+            // - if reset() is called here, it may cause a "silent" exception
+            // - the workaround is to not call reset() but a function which shares with reset()
+            this.__resetNeedToDo();
+        }
+
+        public reset()
+        {
+            super.reset();
+            this.__resetNeedToDo();
+        }
+
+        private __resetNeedToDo()
+        {
             // Send the NM command here
             // - try to send the 2nd time after not receiving OK for 5s (determined in ATCMDHDL.sendCmdInternal)
             this.sendCmdAtInitStage(this.atCmdNM.cmd, this.atCmdNM.seqId++).then( ret => {
                 console.log('[' + this.name + '] sent AT+NM? ok');
-                if( !skipAuth )
+                if( !this.skipAuth )
                 {
                     // Start authentication process
-                    this.authenicate(pinCode);
+                    this.authenicate(this.pinCode);
                 }
                 else
                 {
@@ -62,10 +82,10 @@ export namespace ATCMDHDLNULL
                 console.log('[' + this.name + '] sending AT+NM? the 2nd time ...');
                 this.sendCmdAtInitStage(this.atCmdNM.cmd, this.atCmdNM.seqId++).then( ret => {
                     console.log('[' + this.name + '] sent AT+NM? ok');
-                    if( !skipAuth )
+                    if( !this.skipAuth )
                     {
                         // Start authentication process
-                        this.authenicate(pinCode);
+                        this.authenicate(this.pinCode);
                     }
                     else
                     {
@@ -125,6 +145,8 @@ export namespace ATCMDHDLNULL
                 this.readyToLaunchTheNewHandler();
                 return;
             }
+
+            console.log('[' + this.name + '] use pin code [' + pinCode + ']');
 
             // Send AT+KY command
             // - it may be failed because device does not support AT+KY.
@@ -217,6 +239,14 @@ export namespace ATCMDHDLNULL
             {
                 this.className = "QCC_SNK";
             }
+            else if( this.firmCode == 'TRS' )
+            {
+                this.className = "BLE";
+            }
+            else if( this.firmCode == 'WFI' )
+            {
+                this.className = "WIFI";
+            }
             else
             {
                 this.className = this.firmCode;
@@ -287,7 +317,7 @@ export namespace ATCMDHDLNULL
             pinCode : number,
             events : Events,
             dx : DataExchangerService,
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             upgradeCb : (uuid:string, className:string) => boolean,
             terminateConnectionCb : (uuid:string, info:any) => void,
         )
@@ -303,7 +333,7 @@ export namespace ATCMDHDLNULL
             pinCode : number,
             events : Events,
             dx : DataExchangerService,
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             upgradeCb : (uuid:string, className:string) => boolean,
             terminateConnectionCb : (uuid:string, info:any) => void,
         )

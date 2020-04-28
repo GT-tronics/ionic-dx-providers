@@ -1,5 +1,7 @@
 import { Injectable } from "@angular/core";
 import { Platform, Events } from '@ionic/angular';
+import { Storage } from '@ionic/storage';
+
 import { DataExchangerService } from '../../providers/data-exchanger/data-exchanger.service';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
@@ -53,7 +55,8 @@ export class AtCmdDispatcherService {
     constructor(
         private platform: Platform,
         public events : Events,
-        public dx: DataExchangerService
+        public dx: DataExchangerService,
+        private storage : Storage,
     ) 
     {
         // The list holds all the AT-CMD handlers
@@ -106,7 +109,69 @@ export class AtCmdDispatcherService {
     // Device Managment APIs
     //
 
-    removeLinkedDevice(uuid : string) {
+    loadLinkedDevicesFromStorage( overwrite : boolean = true ) : Promise<any>
+    {
+        // Check storage to find any peristent device
+        // - add them to linked list 
+        return new Promise( (resolve, reject) => {
+            this.storage.get('BtDevLinkedList').then( blobStr => {
+                // console.log("[DISPATCHER] load: " + blobStr);
+                var json = JSON.parse(blobStr);
+                for( var key in json )
+                {
+                    var devInfo : BtDeviceInfo = GLOBAL.DevInfo.createInstance();
+                    
+                    if( this.btDevLinkedList[key] )
+                    {
+                        if( !overwrite )
+                        {
+                            continue;
+                        }
+                        devInfo = this.btDevLinkedList[key];
+                    }
+                    else
+                    {
+                        if( this.btDevUnlinkList[key] )
+                        {
+                            // It is in the unlink list
+                            // - it must have been discovered
+                            // - move it to linked list
+                            devInfo = this.btDevUnlinkList[key];
+                            delete (this.btDevUnlinkList[key]);
+                        }
+                        this.btDevLinkedList[key] = devInfo;
+                    }
+    
+                    devInfo.deserialize(json[key]);
+                    // console.log( devInfo );
+                }
+                resolve();
+            }).catch( ret => {
+                reject();
+            });
+        });
+    }
+
+    saveLinkedDevicesToStorage() : Promise<any>
+    {
+        var json = {};
+        for( var key in this.btDevLinkedList )
+        {
+            json[key] = this.btDevLinkedList[key].serialize();
+        }
+        console.log("[DISPATCHER] save: " + JSON.stringify(json));
+        return new Promise( (resolve, reject) => {
+            this.storage.set('BtDevLinkedList', JSON.stringify(json)).then( ret => {
+                resolve();
+            }).catch( ret => {
+                console.log("[DISPATCHER] saveLinkedDevicesToStorage " + ret);
+                reject();
+            });
+        });
+    }
+
+    removeLinkedDevice(uuid : string) 
+    {
         var devInfo = this.btDevLinkedList[uuid];
         if( devInfo ) {
             //if( devInfo.connected ) 
@@ -519,6 +584,11 @@ export class AtCmdDispatcherService {
             cmdChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_CMD(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxCmd.bind(this), this.upgradeCmdChHandler.bind(this), this.terminateConnection.bind(this));
             this.cmdChHandlerList[devInfo.uuid] = cmdChHandler
         }
+        else
+        {
+            cmdChHandler.reset();
+        }
+        
         cmdChHandler.notifyConnected();
 
         if( this.options.useDataCh )
@@ -532,6 +602,10 @@ export class AtCmdDispatcherService {
             {
                 dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this));
                 this.dataChHandlerList[devInfo.uuid] = dataChHandler
+            }
+            else
+            {
+                dataChHandler.reset();
             }
     
             dataChHandler.notifyConnected();
@@ -742,12 +816,12 @@ export class AtCmdDispatcherService {
     // AT-CMD Handler Callbacks
     //
 
-    sendDxData(uuid:string, data:string) : Promise<any> 
+    sendDxData(uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) : Promise<any> 
     {
         return this.dx.sendDxData(uuid, data);
     }
 
-    sendDxCmd(uuid:string, data:string) : Promise<any> 
+    sendDxCmd(uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) : Promise<any> 
     {
         return this.dx.sendDxCmd(uuid, data);
     }
@@ -788,7 +862,6 @@ export class AtCmdDispatcherService {
         // }
         // newHandler.constructor.apply(newHandler, devInfo.uuid, className, this.sendDxData.bind(this));
         var newHandler = ATCMDHDL.AtCmdHandler.createSubClassInstance(className, devInfo.uuid, className, this.sendDxData.bind(this), this.events);
-        newHandler.notifyConnected();
         this.dataChHandlerList[uuid] = newHandler;
 
         // Bind handler to devInfo
@@ -816,6 +889,7 @@ export class AtCmdDispatcherService {
             }, 2000);
         }
 
+        newHandler.notifyConnected();
         return true;
     }
 
@@ -855,7 +929,6 @@ export class AtCmdDispatcherService {
         // }
         // newHandler.constructor.apply(newHandler, [devInfo.uuid, className, this.sendDxCmd.bind(this)]);
         var newHandler = ATCMDHDL.AtCmdHandler.createSubClassInstance(className, devInfo.uuid, className, this.sendDxCmd.bind(this), this.events);
-        newHandler.notifyConnected();
         this.cmdChHandlerList[uuid] = newHandler;
 
         // Bind handler to devInfo
@@ -883,6 +956,7 @@ export class AtCmdDispatcherService {
             }, 2000);
         }
 
+        newHandler.notifyConnected();
         return true;
     }
 

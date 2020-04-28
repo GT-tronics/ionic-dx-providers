@@ -1,6 +1,7 @@
 import { Events } from '@ionic/angular';
 import { ATCMDHDL } from '../../providers/atcmd-dispatcher/atcmd-handler';
 import { ATCMDHDLCOMMON } from '../../providers/atcmd-dispatcher/atcmd-handler-common';
+import { of } from 'rxjs';
 
 export namespace ATCMDHDLQCCSRC 
 {
@@ -9,17 +10,59 @@ export namespace ATCMDHDLQCCSRC
     enum ConnectState { NONE = 0x0, PRIMARY = 0x1, SECONDARY = 0x2, ERROR = 0x4 };
     enum DeviceState { INIT, PWR_OFF, TEST, IDLE, CONNECTABLE, DISCOVERABLE, CONNECTING, INQUIRING, CONNECTED, CONFIG }
 
+    export interface PeqCoeffGrp
+    {
+        stage : number;
+        b2 : number;
+        b1 : number;
+        b0 : number;
+        a2 : number;
+        a1 : number;
+    }
+
+    export interface PeqGainGrp
+    {
+        left : number;
+        right : number;
+    }
+
+    export interface PeqParamGrp
+    {
+        stage : number;
+        fc : number;
+        q : number;
+        gain : number;
+        typ : string;
+        leftGain? : number;
+        rightGain? : number;
+    }
+
     export class AtCmdHandler_QCC_SRC extends ATCMDHDLCOMMON.AtCmdHandler_COMMON {
 
         static createInstance(
             uuid : string, 
             name : string, 
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events 
         ) : ATCMDHDL.AtCmdHandler
         {
             return new AtCmdHandler_QCC_SRC(uuid, name, sendCb, events);
         }
+
+        static peqTypStr : string[] = ['flat', '1-pole-lp', '1-pole-hp', 'lowpass', 'highpass', 'bandpass', 'notch', 'peak', 'lowshelf', 'highshelf'];
+        static peqTypIdx = 
+        {
+            'flat' : 0,
+            '1-pole-lp' : 1,
+            '1-pole-hp' : 2,
+            'lowpass' : 3,
+            'highpass' : 4,
+            'bandpass' : 5,
+            'notch' : 6,
+            'peak' : 7,
+            'lowshelf' : 8,
+            'highhelf' : 9,
+        };
 
         public atCmdPDL : AtCmdRec_PDL;
         public atCmdDS : AtCmdRec_DS;
@@ -29,11 +72,15 @@ export namespace ATCMDHDLQCCSRC
         public atCmdPDLU : AtCmdRec_PDLU;
         public atCmdDCQ : AtCmdRec_DCQ;
         public atCmdSCAN : AtCmdRec_SCAN;
+        public atCmdPEQC : AtCmdRec_PEQC;
+        public atCmdPEQP : AtCmdRec_PEQP;
+        public atCmdPEQPQ : AtCmdRec_PEQPQ;
+        public atCmdPEQI : AtCmdRec_PEQI;
 
         constructor(
             uuid : string, 
             name : string,
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events
         ) 
         {
@@ -70,6 +117,22 @@ export namespace ATCMDHDLQCCSRC
             // AT+SCAN
             this.atCmdSCAN = new AtCmdRec_SCAN(this.uuid, this.atCmdRspCallback_SCAN.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdSCAN, false);
+
+            // AT+PEQC
+            this.atCmdPEQC = new AtCmdRec_PEQC(this.uuid, this.atCmdRspCallback_PEQC.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdPEQC, false);
+
+            // AT+PEQP
+            this.atCmdPEQP = new AtCmdRec_PEQP(this.uuid, this.atCmdRspCallback_PEQP.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdPEQP, false);
+
+            // AT+PEQPPQ
+            this.atCmdPEQPQ = new AtCmdRec_PEQPQ(this.uuid, this.atCmdRspCallback_PEQPQ.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdPEQPQ, false);
+
+            // AT+PEQI
+            this.atCmdPEQI = new AtCmdRec_PEQI(this.uuid, this.atCmdRspCallback.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdPEQI, false);
         }
     
         //
@@ -135,8 +198,106 @@ export namespace ATCMDHDLQCCSRC
             }
             this.atCmdSCAN.resolve = null;
             this.atCmdSCAN.reject = null;
-    }
+        }
 
+        // Special Callback to handle PEQC unsolicted notification
+        // - the key issue is that "OK" is received before the return is available.
+        // - therefore, the return must be handled in this callback.
+        // - also event broadcast is suppressed.
+        // - command sequence example:
+        //   AT+PEQC=<byteSzToFollow> 
+        //   OK            <== result received after OK (as unsolicted notification)
+        //   ...           <== sending raw bytes here
+        //   +PEQC:<fail0Success1>,<bytesWritten>
+        //
+        private atCmdRspCallback_PEQC( params ) 
+        {
+            this.atCmdPEQC.writeInProgress = false;
+            if( params.retCode == 0 && this.atCmdPEQC.resolve )
+            {
+                //console.log("[" + params.cmdRsp + "] completed success: " + JSON.stringify(params));
+                this.atCmdPEQC.cached = true;
+                this.atCmdPEQC.resolve(params);
+            }
+            else if( params.retCode < 0 && this.atCmdPEQC.reject )
+            {
+                //console.log("[" + params.cmdRsp + "] completed failed: " + params.retCode);
+                this.atCmdPEQC.reject(params);
+            }
+            this.atCmdPEQC.resolve = null;
+            this.atCmdPEQC.reject = null;
+        }
+
+        // Special Callback to handle PEQP unsolicted notification
+        // - the key issue is that "OK" is received before the return is available.
+        // - therefore, the return must be handled in this callback.
+        // - also event broadcast is suppressed.
+        // - command sequence example:
+        //   AT+PEQP=<byteSzToFollow> 
+        //   OK            <== result received after OK (as unsolicted notification)
+        //   ...           <== sending raw bytes here
+        //   +PEQP:<fail0Success1>,<bytesWritten>
+        //
+        private atCmdRspCallback_PEQP( params ) 
+        {
+            this.atCmdPEQP.writeInProgress = false;
+            if( params.retCode == 0 && this.atCmdPEQP.resolve )
+            {
+                //console.log("[" + params.cmdRsp + "] completed success: " + JSON.stringify(params));
+                this.atCmdPEQP.cached = true;
+                this.atCmdPEQP.resolve(params);
+            }
+            else if( params.retCode < 0 && this.atCmdPEQP.reject )
+            {
+                //console.log("[" + params.cmdRsp + "] completed failed: " + params.retCode);
+                this.atCmdPEQP.reject(params);
+            }
+            this.atCmdPEQP.resolve = null;
+            this.atCmdPEQP.reject = null;
+        }
+
+        // Special Callback to handle PEQPQ unsolicted notification
+        // - the key issue is that "OK" is received before the return is available.
+        // - therefore, the return must be handled in this callback.
+        // - also event broadcast is suppressed.
+        // - command sequence example:
+        //   AT+PEQPQ=<byteSzToFollow> 
+        //   OK            <== result received after OK (as unsolicted notification)
+        //   ...           <== sending raw bytes here
+        //   +PEQPQ:0,01 02 03 04 05 06 07 08 09 0a 0b 0c
+        //   +PEQPQ:1,01 02 03 04 05 06 07 08 09 0a 0b 0c
+        //   +PEQPQ:2,01 02 03 04 05 06 07 08 09 0a 0b 0c
+        //   +PEQPQ:3,01 02 03 04 05 06 07 08 09 0a 0b 0c
+        //   +PEQPQ:4,01 02 03 04 05 06 07 08 09 0a 0b 0c
+        //   +PEQPQ:-1
+        //
+        private atCmdRspCallback_PEQPQ( params ) 
+        {
+            this.atCmdPEQPQ.updateInProgress = false;
+            if( params.retCode == 0 && this.atCmdPEQPQ.resolve )
+            {
+                //console.log("[" + params.cmdRsp + "] completed success: " + JSON.stringify(params));
+                this.atCmdPEQPQ.cached = true;
+                
+                var peqGainGrp : PeqGainGrp = { left: 0.0, right: 0.0 };
+
+                if( params.peqParamGrps !== null )
+                {
+                    peqGainGrp.left = params.peqParamGrps[0].leftGain;
+                    peqGainGrp.right = params.peqParamGrps[0].rightGain;
+                }
+
+                params['peqGainGrp'] = peqGainGrp;
+                this.atCmdPEQPQ.resolve(params);
+            }
+            else if( params.retCode < 0 && this.atCmdPEQPQ.reject )
+            {
+                //console.log("[" + params.cmdRsp + "] completed failed: " + params.retCode);
+                this.atCmdPEQPQ.reject(params);
+            }
+            this.atCmdPEQPQ.resolve = null;
+            this.atCmdPEQPQ.reject = null;
+        }
 
         //
         // Support Functions
@@ -358,7 +519,7 @@ export namespace ATCMDHDLQCCSRC
                 var cmd = this.atCmdSCAN.cmd;
                 return new Promise( (resolve, reject) => {
                     console.log("[" + cmd + "] sent failed");
-                    reject({"retCode":-1,"status":"sanning in progress"});
+                    reject({"retCode":-1,"status":"scanning in progress"});
                 });
             }
 
@@ -620,6 +781,422 @@ export namespace ATCMDHDLQCCSRC
                     reject({"retCode":-1,"status":"timeout expired"});
                 });
             });       
+        }
+
+        public setPEQCoeff(gainGrp : PeqGainGrp, coeffGrps : PeqCoeffGrp[], saveSlot : number = 0) : Promise<any>
+        {
+            return this.sendPEQCoeff(this.convertPeqCoeffsToBytes(gainGrp, coeffGrps), saveSlot);
+        }
+
+        public setPEQBypass() : Promise<any>
+        {
+            var buf = new ArrayBuffer(5 * 8 * 2 + 2);
+            var bytes = new Uint8Array(buf);
+            var ofs = 2;
+            // First word is num of stage (5)
+            bytes[0] = 0;
+            bytes[1] = 5;
+
+            for( var i = 0; i < 5; i++ )
+            {
+                bytes[ofs++] = 0x00;    // a1 Low Byte
+                bytes[ofs++] = i;       // stage index
+                bytes[ofs++] = 0x00;    // b2 High Byte
+                bytes[ofs++] = 0x00;    // b2 Mid Byte
+                bytes[ofs++] = 0x00;    // b2 Low Byte
+                bytes[ofs++] = 0x00;    // b1 High Byte
+                bytes[ofs++] = 0x00;    // b1 Mid Byte
+                bytes[ofs++] = 0x00;    // b1 Low Byte
+                bytes[ofs++] = 0x1F;    // b0 High Byte
+                bytes[ofs++] = 0xFF;    // b0 Mid Byte
+                bytes[ofs++] = 0xFF;    // b0 Low Byte
+                bytes[ofs++] = 0x00;    // a2 High Byte
+                bytes[ofs++] = 0x00;    // a2 Mid Byte
+                bytes[ofs++] = 0x00;    // a2 Low Byte
+                bytes[ofs++] = 0x00;    // a1 High Byte
+                bytes[ofs++] = 0x00;    // a1 Mid Byte
+            }
+
+            return this.sendPEQCoeff(bytes);
+        }
+
+        public setPEQSpecial() : Promise<any>
+        {
+            var buf = new ArrayBuffer(5 * 8 * 2 + 2);
+            var bytes = new Uint8Array(buf);
+            var byteOfs = 2;
+            // First word is num of stage (5)
+            bytes[0] = 0;
+            bytes[1] = 5;
+
+            var codes : number[] =
+            [
+                0x33E7EF,
+                0x8CAB31,
+                0x42116A,
+                0x35F95A,
+                0x8CAB31,
+                0x2BE882,
+                0x9AF23F,
+                0x4127C1,
+                0x2D1044,
+                0x9AF23F,
+                0x1FC756,
+                0xB6E2D3,
+                0x3FFFFF,
+                0x1FC756,
+                0xB6E2D3,
+                0x1D7F9A,
+                0xD2A8DE,
+                0x7FFFFF,
+                0x1D7F9A,
+                0xD2A8DE,
+                0xE658C4,
+                0x465179,
+                0x7FFFFF,
+                0xE658C4,
+                0x465179,
+            ];
+
+            var stageIdx = 0;
+            var a1LowByteIdx = 0;
+            for( var i=0; i < codes.length * 3; i++)
+            {
+                var byte : number;
+
+                if( (i % 3) == 0 )
+                {
+                    byte = (codes[i/3] >> 16) & 0xFF;                    
+                }
+                else if( (i % 3) == 1 )
+                {
+                    byte = (codes[i/3] >> 8) & 0xFF;                    
+                } 
+                else
+                {
+                    byte = codes[i/3] & 0xFF;                    
+                }
+
+                if( ((byteOfs-2) % 16) == 0 )
+                {
+                    a1LowByteIdx = byteOfs++;
+                    bytes[byteOfs++] = stageIdx++;
+                }
+
+                if( (i % 15) == 14 )
+                {
+                    bytes[a1LowByteIdx] = byte;
+                }
+                else
+                {
+                    bytes[byteOfs++] = byte;
+                }
+            }
+            
+            return this.sendPEQCoeff(bytes);
+        }
+
+        private sendPEQCoeff( bytes : Uint8Array, saveSlot : number = 0) : Promise<any>
+        {
+            if( this.atCmdPEQC.writeInProgress || saveSlot < 0 || saveSlot > 5)
+            {
+                var errStr = (this.atCmdPEQC.writeInProgress ?"writing in progress" :"invalid save slot");
+                var cmd = this.atCmdPEQC.cmd;
+                return new Promise( (resolve, reject) => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":"writing in progress"});
+                });
+            }
+
+            this.atCmdPEQC.cached = false;
+            this.atCmdPEQC.writeInProgress = true;
+
+            var cmd = "AT+PEQC=" + bytes.length + ',' + saveSlot;
+            return new Promise((resolve, reject) => {
+                this.atCmdPEQC.resolve = resolve;
+                this.atCmdPEQC.reject = reject;
+                this.sendCmd(cmd,this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    this.sendCb( this.uuid, bytes.buffer ).catch( (obj) => {
+                        console.log("[" + cmd + "] sent bytes failed");
+                        reject({"retCode":-5,"status":"sent bytes failed"});
+                        this.atCmdPEQC.writeInProgress = false;
+                        this.atCmdPEQC.resolve = null;
+                        this.atCmdPEQC.reject = null;
+                    });
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                    this.atCmdPEQC.writeInProgress = false;
+                    this.atCmdPEQC.resolve = null;
+                    this.atCmdPEQC.reject = null;
+                });
+            });                 
+        }
+
+        private convertPeqCoeffsToBytes(gainGrp : PeqGainGrp, coeffGrps : PeqCoeffGrp[]) : Uint8Array
+        {
+            var bufSz = 16 * coeffGrps.length + 2;
+
+            if( gainGrp !== null )
+            {
+                // left and right gain
+                // - 3 bytes for frac
+                // - 2 bytes for exp
+                bufSz += 10;
+            }
+            var buf = new ArrayBuffer(bufSz);
+            var bytes = new Uint8Array(buf);
+            var ofs = 2;
+            var frac, expL = 0, expR = 0;
+
+            bytes[0] = (gainGrp === null ?0 :1);
+            bytes[1] = coeffGrps.length;
+
+            if( gainGrp !== null )
+            {
+                var left = Math.pow(10, (gainGrp.left/10.0));
+
+                if( left > 1.0 )
+                {
+                    while( left > 1.0 )
+                    {
+                        left /= 2;
+                        expL++;
+                    }
+                }
+                else if( left < 1.0 )
+                {
+                    while( left < 1.0 )
+                    {
+                        left *= 2;
+                        expL--;
+                    }
+                    left /= 2;
+                    expL++;
+                    expL = (0x10000 + expL) & 0xFFFF;
+                }
+
+                // left gain frac
+                frac = this.convertDecimalToFractionBinary(left, 24, 0);
+                bytes[ofs++] = (frac >> 16) & 0xFF;
+                bytes[ofs++] = (frac >> 8) & 0xFF;
+                bytes[ofs++] = (frac >> 0) & 0xFF;
+
+                var right = Math.pow(10, (gainGrp.right/10.0));
+
+                if( right > 1.0 )
+                {
+                    while( right > 1.0 )
+                    {
+                        right /= 2;
+                        expR++;
+                    }
+                }
+                else if( right < 1.0 )
+                {
+                    while( right < 1.0 )
+                    {
+                        right *= 2;
+                        expR--;
+                    }
+                    right /= 2;
+                    expR++;
+                    expR = (0x10000 + expR) & 0xFFFF;
+                }
+
+                // right gain frac
+                frac = this.convertDecimalToFractionBinary(right, 24, 0);
+                bytes[ofs++] = (frac >> 16) & 0xFF;
+                bytes[ofs++] = (frac >> 8) & 0xFF;
+                bytes[ofs++] = (frac >> 0) & 0xFF;
+
+                // left gain exp
+                bytes[ofs++] = (expL >> 8) & 0xFF;
+                bytes[ofs++] = (expL >> 0) & 0xFF;
+
+                // right gain exp
+                bytes[ofs++] = (expR >> 8) & 0xFF;
+                bytes[ofs++] = (expR >> 0) & 0xFF;
+            }
+
+            for( var coeffGrp of coeffGrps)
+            {
+                bytes.set(this.convertPeqCoeffToBytes(coeffGrp), ofs);
+                ofs += 16;
+            }
+            
+            return bytes;
+        }
+
+        private convertPeqCoeffToBytes(coeffGrp : PeqCoeffGrp) : Uint8Array
+        {
+            var buf = new ArrayBuffer(16);
+            var bytes = new Uint8Array(buf);
+            var frac : number;
+            var idx = 2;
+
+            bytes[1] = coeffGrp.stage;
+
+            frac = this.convertDecimalToFractionBinary(coeffGrp.b2, 24, 2);
+            bytes[idx++] = (frac >> 16) & 0xFF;
+            bytes[idx++] = (frac >> 8) & 0xFF;
+            bytes[idx++] = (frac >> 0) & 0xFF;
+            
+            frac = this.convertDecimalToFractionBinary(coeffGrp.b1, 24, 2);
+            bytes[idx++] = (frac >> 16) & 0xFF;
+            bytes[idx++] = (frac >> 8) & 0xFF;
+            bytes[idx++] = (frac >> 0) & 0xFF;
+
+            frac = this.convertDecimalToFractionBinary(coeffGrp.b0, 24, 2);
+            bytes[idx++] = (frac >> 16) & 0xFF;
+            bytes[idx++] = (frac >> 8) & 0xFF;
+            bytes[idx++] = (frac >> 0) & 0xFF;
+
+            frac = this.convertDecimalToFractionBinary(coeffGrp.a2, 24, 2);
+            bytes[idx++] = (frac >> 16) & 0xFF;
+            bytes[idx++] = (frac >> 8) & 0xFF;
+            bytes[idx++] = (frac >> 0) & 0xFF;
+
+            frac = this.convertDecimalToFractionBinary(coeffGrp.a1, 24, 2);
+            bytes[idx++] = (frac >> 16) & 0xFF;
+            bytes[idx++] = (frac >> 8) & 0xFF;
+            bytes[0] = (frac >> 0) & 0xFF;
+
+            return bytes;
+        }
+
+        private convertDecimalToFractionBinary(decimal : number, bitSz : number, scaleDownBitSz : number) : number
+        {
+            var frac = 0;
+            var bitIndex = bitSz + scaleDownBitSz;   
+            var isNeg : boolean = false;
+            var thres : number = 1 << scaleDownBitSz;
+            
+            if( decimal < 0.0 )
+            {
+                decimal = -decimal;
+                isNeg = true;
+            }
+
+            if( decimal >= (1 << (bitSz - 1)) )
+            {
+                frac = (1 << (bitSz - 1)) - 1;
+            }
+            else
+            {
+                while( --bitIndex > 0 )
+                {
+                    decimal *= 2.0;
+                    if( decimal >= thres )
+                    {
+                        frac |= (1 << (bitIndex - 1));
+                        decimal -= thres;
+                    }  
+                }
+    
+                frac >>= scaleDownBitSz;
+    
+                if( frac >= (1 << (bitSz - scaleDownBitSz - 1)) )
+                {
+                    frac = (1 << (bitSz - scaleDownBitSz - 1)) - 1;    
+                }    
+            }
+
+            if( isNeg )
+            {
+                frac = ((1 << bitSz) - frac) & ((1 << bitSz) - 1);
+            }
+
+            return frac;
+        }
+
+        public savePEQParams(gainGrp : PeqGainGrp, paramGrps : PeqParamGrp[], saveSlot : number = 1) : Promise<any>
+        {
+            return this.sendPEQParams(this.convertPeqPramsToBytes(gainGrp, paramGrps), saveSlot);
+        }
+
+        private convertPeqPramsToBytes(gainGrp : PeqGainGrp, paramGrps : PeqParamGrp[]) : Uint8Array
+        {
+            var bufSz = 12 * paramGrps.length;
+            var buf = new ArrayBuffer(bufSz);
+            var bytes = new Uint8Array(buf);
+            var ofs = 0;
+            
+            for( var peqParamGrp of paramGrps)
+            {
+                bytes[ofs++] = (peqParamGrp.fc >> 8) & 0xFF;
+                bytes[ofs++] = (peqParamGrp.fc >> 0) & 0xFF;
+                bytes[ofs++] = (Math.round(peqParamGrp.q * 100) >> 8) & 0xFF;
+                bytes[ofs++] = (Math.round(peqParamGrp.q * 100) >> 0) & 0xFF;
+                bytes[ofs++] = (Math.round((peqParamGrp.gain + 25) * 100) >> 8) & 0xFF;
+                bytes[ofs++] = (Math.round((peqParamGrp.gain + 25) * 100) >> 0) & 0xFF;
+                bytes[ofs++] = 0;
+                bytes[ofs++] = AtCmdHandler_QCC_SRC.peqTypIdx[peqParamGrp.typ];
+                bytes[ofs++] = (Math.round((gainGrp.left + 20) * 100) >> 8) & 0xFF;
+                bytes[ofs++] = (Math.round((gainGrp.left + 20) * 100) >> 0) & 0xFF;
+                bytes[ofs++] = (Math.round((gainGrp.right + 20) * 100) >> 8) & 0xFF;
+                bytes[ofs++] = (Math.round((gainGrp.right + 20) * 100) >> 0) & 0xFF;
+            }
+
+            return bytes;
+        }
+
+        private sendPEQParams( bytes : Uint8Array, saveSlot : number = 1) : Promise<any>
+        {
+            if( this.atCmdPEQP.writeInProgress || saveSlot <= 0 || saveSlot > 5 )
+            {
+                var errStr = (this.atCmdPEQP.writeInProgress ?"writing in progress" :"invalid save slot");
+                var cmd = this.atCmdPEQP.cmd + saveSlot;
+                return new Promise( (resolve, reject) => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":errStr});
+                });
+            }
+
+            this.atCmdPEQP.cached = false;
+            this.atCmdPEQP.writeInProgress = true;
+            
+            var cmd = "AT+PEQP=" + bytes.length + ',' + saveSlot;
+            return new Promise((resolve, reject) => {
+                this.atCmdPEQP.resolve = resolve;
+                this.atCmdPEQP.reject = reject;
+                this.sendCmd(cmd,this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                    this.sendCb( this.uuid, bytes.buffer ).catch( (obj) => {
+                        console.log("[" + cmd + "] sent bytes failed");
+                        reject({"retCode":-5,"status":"sent bytes failed"});
+                        this.atCmdPEQP.writeInProgress = false;
+                        this.atCmdPEQP.resolve = null;
+                        this.atCmdPEQP.reject = null;
+                    });
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                    this.atCmdPEQP.writeInProgress = false;
+                    this.atCmdPEQP.resolve = null;
+                    this.atCmdPEQP.reject = null;
+                });
+            });                 
+        }
+
+        public setPEQProfile(currentProfile : number, maxProfile : number, save : boolean = false) : Promise<any>
+        {
+            return new Promise((resolve, reject) => {
+                var cmd = "AT+PEQI=" + (save ?"1," :"0,") + currentProfile + ',' + maxProfile;
+                this.sendCmd( cmd, this.seqId++).then( ret => {
+                    // console.log("[" + cmd + "] sent ok");
+                    if( this.atCmdPEQI.cached )
+                    {
+                        this.atCmdPEQI.params['currentProfile'] = currentProfile;
+                        this.atCmdPEQI.params['maxProfile'] = maxProfile;
+                    }
+                    resolve({"retCode":0,"status":"success"});
+                }).catch( ret => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                })
+            });
         }
 
         //
@@ -1023,6 +1600,58 @@ export namespace ATCMDHDLQCCSRC
                 }).catch( obj => {
                     console.log("[" + cmd + "] sent failed");
                     reject({"retCode":-1,"status":"timeout expired"});
+                });
+            });
+        }
+
+        public getPEQ(slotIdx : number = 1) : Promise<any>
+        {
+            if( this.atCmdPEQPQ.updateInProgress || slotIdx <= 0 || slotIdx > 5 )
+            {
+                var errStr = (this.atCmdPEQPQ.updateInProgress ?"retrival in progress" :"invalid slot index");
+                var cmd = this.atCmdPEQPQ.cmd + slotIdx;
+                return new Promise( (resolve, reject) => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-1,"status":errStr});
+                });
+            }
+
+            this.atCmdPEQPQ.cached = false;
+            this.atCmdPEQPQ.updateInProgress = true;
+
+            var cmd = this.atCmdPEQPQ.cmd + slotIdx;
+            return new Promise((resolve, reject) => {
+                this.atCmdPEQPQ.resolve = resolve;
+                this.atCmdPEQPQ.reject = reject;
+                this.sendCmd(cmd,this.seqId++).then( obj => {
+                    console.log("[" + cmd + "] sent ok");
+                }).catch( obj => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
+                    this.atCmdPEQPQ.updateInProgress = false;
+                    this.atCmdPEQPQ.resolve = null;
+                    this.atCmdPEQPQ.reject = null;
+                });
+            });     
+        }
+
+        public getPEQProfile(cache : boolean = true) : Promise<any>
+        {
+            if( cache && this.atCmdPEQI.cached )
+            {
+                return new Promise ((resolve, reject) => {
+                    resolve(this.atCmdPEQI.params);
+                });
+            }
+            
+            return new Promise((resolve, reject) => {
+                var cmd = this.atCmdPEQI.cmd;
+                this.atCmdRefresh(cmd).then( ret => {
+                    console.log("[" + cmd + "] sent ok");
+                    resolve(this.atCmdPEQI.params);
+                }).catch( ret => {
+                    console.log("[" + cmd + "] sent failed");
+                    reject({"retCode":-4,"status":"timeout expired"});
                 });
             });
         }
@@ -1709,6 +2338,210 @@ export namespace ATCMDHDLQCCSRC
             }
             
             scanRecs[scanRec.addr] = scanRec;
+        }
+    }
+
+    //
+    // AT+PEQC AT-CMD Record
+    //
+
+    export class AtCmdRec_PEQC extends ATCMDHDL.AtCmdRec 
+    {
+        public writeInProgress : boolean = false;
+
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+PEQC=', "(?:AT)?\\+PEQC\\:(-?[0-9]+),([0-9]+)", cb, events);
+        }
+
+        match(matchAry : any[]) 
+        {
+            this.params['seqid'] = this.seqId;
+            this.params['uuid'] = this.uuid;
+            this.params['cmdRsp'] = "+PEQC:";
+            this.params['retCode'] = (matchAry[1] == "1" ?0 :-2);
+            this.params['status'] = (matchAry[1] == "1" ?"success" :"failed");
+            this.params['bytesWritten'] = +matchAry[2];
+
+            super.match(matchAry);
+        }
+    }
+
+    //
+    // AT+PEQP AT-CMD Record
+    //
+
+    export class AtCmdRec_PEQP extends ATCMDHDL.AtCmdRec 
+    {
+        public writeInProgress : boolean = false;
+
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+PEQP=', "(?:AT)?\\+PEQP\\:(-?[0-9]+),([0-9]+)", cb, events);
+        }
+
+        match(matchAry : any[]) 
+        {
+            this.params['seqid'] = this.seqId;
+            this.params['uuid'] = this.uuid;
+            this.params['cmdRsp'] = "+PEQP:";
+            this.params['retCode'] = (matchAry[1] == "1" ?0 :-2);
+            this.params['status'] = (matchAry[1] == "1" ?"success" :"failed");
+            this.params['bytesWritten'] = +matchAry[2];
+
+            super.match(matchAry);
+        }
+    }
+
+    export interface PeqParamGrps
+    {
+        [index : number] : PeqParamGrp;
+    }
+
+    interface PeqParamGrpsMap extends Map<PeqParamGrps>
+    {
+    }    
+
+    //
+    // AT+PEQPQ Notification
+    //
+
+    export class AtCmdRec_PEQPQ extends ATCMDHDL.AtCmdRec 
+    {
+        static gCnt : number = 0;
+        public PeqParamGrpsMap : PeqParamGrpsMap;
+        public updateInProgress : boolean;
+
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+PEQPQ=', "(?:AT)?\\+PEQPQ\\:(-?[0-9]+)(?:,(.+))?", cb, events);
+            this.PeqParamGrpsMap = <PeqParamGrpsMap>{};
+        }
+
+        match(matchAry : any[]) 
+        {
+            // console.log(matchAry[0]);
+
+            var rank = +matchAry[1];
+
+            if( rank == 0 )
+            {
+                AtCmdRec_PEQPQ.gCnt++;
+                // Last one received
+                // - clear the previous map record.
+                if( this.PeqParamGrpsMap[AtCmdRec_PEQPQ.gCnt-1] !== undefined )
+                {
+                    delete this.PeqParamGrpsMap[AtCmdRec_PEQPQ.gCnt-1];
+                }
+            }
+            else if( rank == -1 )
+            {
+                if( this.PeqParamGrpsMap[AtCmdRec_PEQPQ.gCnt] == null )
+                {
+                    this.params = { "peqParamGrps" : null };
+                }
+                else
+                {
+                    this.params = { "peqParamGrps" : this.PeqParamGrpsMap[AtCmdRec_PEQPQ.gCnt] };
+                }
+                this.params['seqid'] = this.seqId;
+                this.params['uuid'] = this.uuid;
+                this.params['cmdRsp'] = "+PEQPQ:";
+                this.params['retCode'] = 0;
+                this.params['status'] = "success";
+
+
+                // Notify
+                super.match(matchAry);
+                return;
+            }
+
+            var bytesStr = matchAry[2];            
+
+            var fc = parseInt(bytesStr.slice(0,2) + bytesStr.slice(3,5), 16);
+            var q = parseInt(bytesStr.slice(6,8) + bytesStr.slice(9,11), 16) / 100.0;
+            var gain = parseInt(bytesStr.slice(12,14) + bytesStr.slice(15,17), 16) / 100.0 - 25;
+            var idx = parseInt(bytesStr.slice(18,20) + bytesStr.slice(21,23), 16);
+            if( idx < 0 || idx > AtCmdHandler_QCC_SRC.peqTypStr.length )
+            {
+                idx = 0;
+            }
+            var typ = AtCmdHandler_QCC_SRC.peqTypStr[idx];
+            var leftGain = parseInt(bytesStr.slice(24,26) + bytesStr.slice(27,29), 16) / 100.0 - 20;
+            var rightGain = parseInt(bytesStr.slice(30,32) + bytesStr.slice(33,35), 16) / 100.0 - 20;
+
+            var peqParamGrp : PeqParamGrp =
+            {
+                stage : rank,
+                fc : fc,
+                q : q,
+                gain : gain,
+                typ : typ,
+                leftGain : leftGain,
+                rightGain : rightGain
+            };
+
+            var seqId = AtCmdRec_PEQPQ.gCnt;
+            var peqParamGrps : PeqParamGrps = this.PeqParamGrpsMap[seqId];
+
+            // console.log("gCnt: ", AtCmdRec_PEQPQ.gCnt);
+            // console.log("peqParamGrps: \n", JSON.stringify(peqParamGrps === undefined ?{} :peqParamGrps));
+
+            if( !peqParamGrps )
+            {
+                peqParamGrps = <PeqParamGrps>[];
+                this.PeqParamGrpsMap[seqId] = peqParamGrps;
+            }
+            
+            peqParamGrps[rank] = peqParamGrp;
+        }
+    }
+
+    //
+    // AT+PEQI? AT-CMD Record
+    //
+
+    export class AtCmdRec_PEQI extends ATCMDHDL.AtCmdRec 
+    {
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            super(uuid, 'AT+PEQI?', "(?:AT)?\\+PEQI\\:([0-9]+),([0-9]+),([0-9]+)", cb, events);
+
+            // Enable broadcast
+            this.eventId = "QCC_SRC_PEQ_CHANGED";
+        }
+
+        match(matchAry : any[]) 
+        {
+            this.params = 
+            {
+                "cmdRsp" : "+PEQI:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "currentProfile" : +matchAry[1],
+                "savedProfile" : +matchAry[2],
+                "maxProfile" : +matchAry[3],
+            }
+            // Always put this to last
+            super.match(matchAry);
         }
     }
 

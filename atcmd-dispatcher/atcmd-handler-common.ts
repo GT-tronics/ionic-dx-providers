@@ -11,13 +11,14 @@ export namespace ATCMDHDLCOMMON
         public atCmdVS : AtCmdRec_VS;
         public atCmdEC : AtCmdRec_EC;
         public atCmdNM : AtCmdRec_NM;
+        public atCmdDBG : AtCmdRec_DBG;
         
         protected seqId : number;
 
         constructor(
             uuid : string, 
             name : string,
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events
         ) 
         {
@@ -42,6 +43,11 @@ export namespace ATCMDHDLCOMMON
             // - don't bother to refresh because it will be set right away
             this.atCmdNM = new AtCmdRec_NM(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdNM, false);
+
+            // AT+DBG:
+            // - don't bother to refresh because it will be set right away
+            this.atCmdDBG = new AtCmdRec_DBG(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.addAtCmdRecToParser(this.atCmdDBG, false);
 
             // Set echo off (AT+EC=0)
             // - this is the 2nd command to be sent
@@ -235,5 +241,39 @@ export namespace ATCMDHDLCOMMON
             super.match(matchAry);
         }
     }
+
+
+    // AT+DBG
+    export class AtCmdRec_DBG extends ATCMDHDL.AtCmdRec 
+    {
+        constructor(
+            uuid : string,
+            cb : ( obj : {} ) => void,
+            events : Events
+        )
+        {
+            //super(uuid, 'AT+NM?', "\\+NM\\:(.+),(.+),(.+)", cb);
+            super(uuid, 'AT+DBG', "(?:AT)?\\+DBG:(.+)", cb, events);
+        }
+
+        match(matchAry : any[]) 
+        {
+            console.log("[DBG] ", matchAry[1]);
+            
+            // Set the parameter object for the callback
+            this.params = { 
+                "cmdRsp" : "+NM:",
+                "uuid" : this.uuid,
+                "seqId" : this.seqId,
+                "retCode" : 0,
+                "status" : "success",
+                "dbgMsg" : matchAry[1],
+            };
+
+            // Always the last
+            super.match(matchAry);
+        }
+    }
+
 
 } // namespace ATCMDHDLCOMMON

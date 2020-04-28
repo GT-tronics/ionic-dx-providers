@@ -27,7 +27,7 @@ export namespace ATCMDHDLQCCSNK {
         static createInstance(
             uuid : string, 
             name : string, 
-            sendCb : (uuid:string, data:string) => Promise<any> ,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any> ,
             events : Events
         ) : ATCMDHDL.AtCmdHandler
         {
@@ -51,7 +51,7 @@ export namespace ATCMDHDLQCCSNK {
         constructor(
             uuid : string, 
             name : string,
-            sendCb : (uuid:string, data:string) => Promise<any>,
+            sendCb : (uuid:string, data:string | ArrayBuffer | SharedArrayBuffer) => Promise<any>,
             events : Events
         ) 
         {
