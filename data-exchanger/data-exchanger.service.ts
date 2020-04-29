@@ -443,13 +443,15 @@ export class DataExchangerService {
     // firmBinaryData = firmware binary blob data
     // firmNameStr = firmware name
     //
-    primeDxFirmware(devUUID : string, firmCode : string, firmBin : ArrayBuffer, firmName : string, success : (obj) => void, failure : (obj) => void, progress : (obj) => void) {
+    primeDxFirmware(devUUID : string, firmCode : string, firmSlot : number, firmBin : ArrayBuffer, firmName : string, forcePrime : boolean, success : (obj) => void, failure : (obj) => void, progress : (obj) => void) {
         this.platform.ready().then(() => {
             var params = {
                 uuid: devUUID == null ?this.deviceUUID :devUUID,
                 firmCode : firmCode,
+                firmSlot : firmSlot,
                 firmBin: firmBin,
                 firmName: firmName,
+                forcePrime: forcePrime,
                 ilCmd: null,
                 ilCnt: 0,
             };
@@ -458,8 +460,10 @@ export class DataExchangerService {
             cordova.plugin.dx.primeFirmwareBinary(
                 params.uuid,
                 params.firmCode,
+                params.firmSlot,
                 params.firmBin,
                 params.firmName,
+                params.forcePrime,
                 params.ilCmd,
                 params.ilCnt,
                 (obj) => {

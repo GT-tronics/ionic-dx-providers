@@ -154,6 +154,7 @@ export namespace ATCMDHDLNULL
                 return;
             }
 
+            // FIXME - remove in production
             console.log('[' + this.name + '] use pin code [' + pinCode + ']');
 
             // Send AT+KY command

@@ -357,7 +357,6 @@ export namespace ATCMDHDL
         private unrecognizedLines : string[];
         private sendQ : CmdQRec[];
         private ready : boolean;
-        private initStage : boolean;
         private initSending : boolean;
         private huntForOk : boolean;
         private huntForOkTimeout : any;
@@ -432,7 +431,6 @@ export namespace ATCMDHDL
             this.unrecognizedLines = [];
             this.sendQ = [];
             this.ready = false;
-            this.initStage = true;
             this.initSending = false;
             this.huntForOk = false;
             this.huntForOkTimeout = null;
@@ -444,8 +442,12 @@ export namespace ATCMDHDL
         // Reset the state machine
         public reset()
         {
+            this.ready = false;
+            this.initSending = false;
             super.reset();
             this.resetSendQ();
+
+            this.events.publish("ATCMDHDL_RESET", { name: this.name });
         }        
 
         //
@@ -522,8 +524,8 @@ export namespace ATCMDHDL
                 var params : any =
                 {
                     hdl : this,
-                    startIdx : currLogLineIdx,
-                    endIdx : lastLogLineIdx
+                    startIdx : lastLogLineIdx,
+                    endIdx : currLogLineIdx
                 }
                 this.events.publish('ATCMDHDL_TEXT_MORE_LOGS', params);
             }
@@ -657,7 +659,7 @@ export namespace ATCMDHDL
         //
         protected sendCmdAtInitStage( cmd : string, signature : number, sendTimeout : number = 5000 ) : Promise<any>
         {
-            if( !this.initStage )
+            if( this.ready )
             {
                 return this.sendCmd( cmd, signature );
             }
@@ -738,13 +740,14 @@ export namespace ATCMDHDL
         protected setSendReady()
         {
             this.ready = true;
-            this.initStage = false;
             if( this.sendQ.length > 0 )
             {
                 setTimeout(() => {
                     this.sendCmdInternal();
                 },0);
             }
+
+            this.events.publish("ATCMDHDL_RDY", { name: this.name });
         }
 
         protected resetSendQ()

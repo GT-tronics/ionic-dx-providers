@@ -25,7 +25,7 @@ export namespace ATCMDHDLCOMMON
             super(uuid, name, sendCb, events);
 
             // Install parser speed filter 
-            this.installParserSpeedFilter("\\+[0-9A-Za-z]+[:=]{1}.+");
+            this.installParserSpeedFilter("\\+(?:W?RDY)|(?:[0-9A-Za-z]+[:=?]{1}.*)");
     
             this.seqId = 0;
             
@@ -120,6 +120,7 @@ export namespace ATCMDHDLCOMMON
     export class AtCmdRec_VS extends ATCMDHDL.AtCmdRec 
     {
         public swVer : string;
+        public swVar : string;
         public hwVer : string;
         public sysVer : string;
         public capability : string;
@@ -130,8 +131,9 @@ export namespace ATCMDHDLCOMMON
             events : Events
         )
         {
-            super(uuid, 'AT+VS?', "(?:AT)?\\+VS\\:([0-9\\.]+),([0-9\\.]+)(?:,(.+),(.+),.+)?", cb, events);
+            super(uuid, 'AT+VS?', "(?:AT)?\\+VS\\:([0-9\\.]+),([0-9\\.]+)(a?)(?:,(.+),([A-Za-z0-9]+)(?:_R2)?,.+)?", cb, events);
             this.swVer = '';
+            this.swVar = '';
             this.hwVer = '';
             this.sysVer = '';
             this.capability = '';
@@ -141,10 +143,17 @@ export namespace ATCMDHDLCOMMON
         {
             this.hwVer = matchAry[1];
             this.swVer = matchAry[2];
-            this.sysVer = matchAry[3] ?matchAry[3] :"";
-            this.capability = matchAry[4] ?matchAry[4] :"";
+            this.swVar = matchAry[3] ?matchAry[3] :"";
+            this.sysVer = matchAry[4] ?matchAry[4] :"";
+            this.capability = matchAry[5] ?matchAry[5] :"";
 
-            console.log("[AtCmdRec_VS] SW Version[" + this.swVer + "] HW Version[" + this.hwVer + "]");
+            // if( this.swVer.length > 0 && this.swVer.charAt(this.swVer.length-1) == "a" )
+            // {
+            //     this.swVer = this.swVer.substring(0, this.swVer.length-1);
+            //     this.swVar = "a";
+            // }
+
+            console.log("[AtCmdRec_VS] SW Version[" + this.swVer + "] HW Version[" + this.hwVer + "] Variant[" + this.swVar + "]");
 
             // Set the parameter object for the callback
             this.params = { 
@@ -153,7 +162,8 @@ export namespace ATCMDHDLCOMMON
                 "seqId" : this.seqId,
                 "retCode" : 0,
                 "status" : "success",
-                "swVer" : this.swVer, 
+                "swVer" : this.swVer,
+                "swVar" : this.swVar, 
                 "hwVer" : this.hwVer,
                 'sysVer' : this.sysVer,
                 'capability' : this.capability,

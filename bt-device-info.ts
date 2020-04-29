@@ -8,6 +8,7 @@ export interface GeneralInfo
     modelNo : string;
     manufacturer : string;
     swVer : string;
+    swVar : string;
     hwVer : string;
     sysVer : string;
     capability : string;
@@ -18,6 +19,7 @@ export enum DevState
     IDLE = 0,
     CONNECTING,
     CONNECTED,
+    DISCONNECTING,
 };
 
 // BT Device Info Class
@@ -121,6 +123,11 @@ export class BtDeviceInfo {
         return (this.state == DevState.CONNECTING);
     }
 
+    isDisconnecting()
+    {
+        return (this.state == DevState.DISCONNECTING);
+    }
+
     private getChannelRemoteDeviceGeneralInfo(handler : ATCMDHDLCOMMON.AtCmdHandler_COMMON) : GeneralInfo
     {
         if( !handler )
@@ -140,6 +147,7 @@ export class BtDeviceInfo {
                 modelNo: di.modelNo,
                 manufacturer: di.manufacturer,
                 swVer: vi.swVer,
+                swVar: vi.swVar,
                 hwVer: vi.hwVer,
                 sysVer: vi.sysVer,
                 capability: vi.capability,
@@ -219,6 +227,7 @@ export class BtDeviceInfo {
         modelNo : "Unknown",
         manufacturer : "Unknown",
         swVer : "Unknown",
+        swVar : "Unknown",
         hwVer : "Unknown",
         sysVer : "Unknown",
         capability : "Unknown",
