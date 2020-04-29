@@ -97,8 +97,16 @@ export namespace ATCMDHDLNULL
                     // If for some reason there is no response,
                     // - it will be permanently null device
                     // - null device will straightly notify client and pass the raw data
-                    console.log('[' + this.name + '] DX discovering failed, keep this null handler');
-                    this.terminateConnectionCb(this.uuid, { "retCode":-2, "status":"discovering failed"});
+                    if( this.terminateConnectionCb )
+                    {
+                        console.log('[' + this.name + '] DX discovering failed, terminate the connection.');
+                        this.terminateConnectionCb(this.uuid, { "retCode":-2, "status":"discovering failed"});
+                    }
+                    else
+                    {
+                        console.log('[' + this.name + '] DX discovering failed, keep this null handler');
+                        this.setSendReady();
+                    }
                 });
             });                
         }
@@ -166,7 +174,6 @@ export namespace ATCMDHDLNULL
                         console.log('[' + this.name + '] unlock ok');
                         this.readyToLaunchTheNewHandler();
                     }).catch( obj => {
-                        console.log('[' + this.name + '] unlock failed [' + obj.status + ']. Will be disconnected soon');
                         var info = {};
                         if( pinCode == 0xFFFF )
                         {
@@ -178,11 +185,28 @@ export namespace ATCMDHDLNULL
                             // failure likely is because of wrong pin
                             info = { "retCode":-5, "status":"incorrect pin"};
                         }
-                        this.terminateConnectionCb(this.uuid, info);
+                        if( this.terminateConnectionCb )
+                        {
+                            console.log('[' + this.name + '] unlock failed [' + obj.status + ']. Will be disconnected soon');
+                            this.terminateConnectionCb(this.uuid, info);
+                        }
+                        else
+                        {
+                            console.log('[' + this.name + '] unlock failed [' + obj.status + '], keep this handler');
+                            this.setSendReady();
+                        }
                     });
                 }).catch( obj => {
-                    console.log('[' + this.name + '] key extraction failed. Will be disconnected soon');
-                    this.terminateConnectionCb(this.uuid, { "retCode":-3, "status":"key decrypted failed"});
+                    if( this.terminateConnectionCb )
+                    {
+                        console.log('[' + this.name + '] key extraction failed. Will be disconnected soon');
+                        this.terminateConnectionCb(this.uuid, { "retCode":-3, "status":"key decrypted failed"});
+                    }
+                    else
+                    {
+                        console.log('[' + this.name + '] key extraction failed, keep this handler');
+                        this.setSendReady();
+                    }
                 }); 
             }).catch( obj => {
                 // The device doesn't support AT+KY
@@ -197,9 +221,17 @@ export namespace ATCMDHDLNULL
             console.log('[' + this.name + '] upgrading handler ...');
             if( !this.upgradeCb(this.uuid, this.atCmdNM.className) )
             {
-                console.log('[' + this.name + '] upgrading handler not successful [check codding]');
-                // FIXME: this should be coding error. Should raise exception here.
-            }
+                if( this.terminateConnectionCb )
+                {
+                    console.log('[' + this.name + '] upgrading handler not found [check codding]');
+                    this.terminateConnectionCb(this.uuid, { "retCode":-4, "status":"no subclass found"});
+                }
+                else
+                {
+                    console.log('[' + this.name + '] upgrading handler not found, keep this handler');
+                    this.setSendReady();
+                }
+        }
         }
     }
 

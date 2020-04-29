@@ -53,6 +53,7 @@ export class BtDeviceInfo {
     public generalInfo : any;
     public customInfo : any;
     public scratchPad : any;
+    public noTermination : boolean;
 
     public dataChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
     public cmdChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
@@ -87,6 +88,7 @@ export class BtDeviceInfo {
             cmdCh: this.setDefaultGeneralInfo(),
         };
         this.customInfo = null;
+        this.noTermination = false;
     }
 
     clearConnectTimer()

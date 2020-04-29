@@ -1,6 +1,10 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+# V5 R2
+* rewrote events.ts
+* added the support of AtCmdHandler_NULL handler being instantiated as standalone
+
 # V5 R1
 * branched from V4 R11
 * added the changes to support ionic v5
