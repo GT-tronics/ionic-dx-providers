@@ -54,7 +54,7 @@ export namespace ATCMDHDLWIFI8266
             this.addAtCmdRecToParser(this.atCmdWCON, false);
 
             // AT+WRDY
-            this.atCmdWRDY = new AtCmdRec_WRDY(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
+            this.atCmdWRDY = new AtCmdRec_WRDY(this.uuid, this.atCmdRspCallback_WRDY.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdWRDY, false);
 
             // AT+WMAC?
@@ -62,7 +62,7 @@ export namespace ATCMDHDLWIFI8266
             this.addAtCmdRecToParser(this.atCmdWMAC, false);
 
             // AT+AZON?
-            this.atCmdAZON = new AtCmdRec_AZON(this.uuid, this.atCmdRspCallback_AZON.bind(this), events);
+            this.atCmdAZON = new AtCmdRec_AZON(this.uuid, this.atCmdRspCallbackNoBroadcast.bind(this), events);
             this.addAtCmdRecToParser(this.atCmdAZON, false);
 
             // AT+WAZC?
@@ -103,14 +103,18 @@ export namespace ATCMDHDLWIFI8266
             }
         }
 
-        private atCmdRspCallback_AZON( params )
-        {
-            if( params.connected && this.atCmdWUPG.upgradeInProgress )
-            {
-                this.atCmdWUPG.wifiReset();
-            }
-        }
+        // private atCmdRspCallback_AZON( params )
+        // {
+        //     if( params.connected && this.atCmdWUPG.upgradeInProgress )
+        //     {
+        //         this.atCmdWUPG.wifiReset();
+        //     }
+        // }
 
+        private atCmdRspCallback_WRDY( params )
+        {
+            this.atCmdWUPG.wifiReset();
+        }
 
         //
         // Support Functions
@@ -274,6 +278,18 @@ export namespace ATCMDHDLWIFI8266
         public async scanAndFixProvisioning(provisionTable : any)
         {
             var tempStr = provisionTable.cloudTemplateString;
+
+            // WiFi firmware 0.9.10 and above fixed a JSON buffer size problem
+            // - which allows a no restriction cloud template string
+            var rx = /[0-9+]\.[0-9]\.([0-9]+)/g;
+            var arr = rx.exec(this.atCmdVS.swVer);
+            if( arr )
+            {
+                if( parseInt(arr[1], 10) >= 10 )
+                {
+                    tempStr = provisionTable.cloudTemplateString2;
+                } 
+            }
 
             // Find template from provision table
             if( tempStr === undefined || tempStr === null )
@@ -519,10 +535,10 @@ export namespace ATCMDHDLWIFI8266
         public async verifyFirmwareUpgrade(ver : string)
         {
             await this.atCmdRefresh(this.atCmdVS.cmd);
-
-            if( ver != this.atCmdVS.swVer )
+            var ver2 = this.atCmdVS.swVer + this.atCmdVS.swVar;
+            if( ver != ver2 )
             {
-                throw({"retCode":-1,"status":"version incorrect","swVer":this.atCmdVS.swVer});
+                throw({"retCode":-1,"status":"version incorrect","swVer":ver2});
             }
             return({"retCode":0,"status":"success"});
         }
@@ -1218,6 +1234,7 @@ export namespace ATCMDHDLWIFI8266
                     this.progressCb(this.startStage + this.currStage, 0);
                 }
                 this.currStage++;
+                this.writtenSz = 0;
                 this.params["stage"] = this.currStage;
                 this.params["percentComplete"] = 0;
             }

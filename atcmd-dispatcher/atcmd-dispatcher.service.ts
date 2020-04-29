@@ -337,8 +337,23 @@ export class AtCmdDispatcherService {
             {
                 // already connecting
                 //  - notify the connect's promise that the connect is not successful
-                console.log("[connect] 2");
                 reject({"retCode":-3,"status":"still connecting"});
+                return;
+            }
+    
+            if( devInfo.state == DevState.DISCONNECTING )
+            {
+                // disconnecting
+                //  - notify the connect's promise that the connect is not successful
+                reject({"retCode":-4,"status":"still disconnecting"});
+                return;
+            }
+    
+            if( devInfo.state == DevState.CONNECTED )
+            {
+                // already connected
+                //  - notify the connect's promise that the connect is not successful
+                reject({"retCode":-4,"status":"already connected"});
                 return;
             }
     
@@ -415,31 +430,17 @@ export class AtCmdDispatcherService {
                 reject({"retCode":-1,"status":"UUID not in scan list"});
             });
         }
-        
-        return new Promise((resolve, reject) => {
-            // Flush the queues of ATCMD handler
-            var cmdChHdlr = this.getCmdChHandler(uuid);
-            var dataChHdlr = this.getDataChHandler(uuid);
 
-            if( dataChHdlr && dataChHdlr instanceof ATCMDHDL.AtCmdHandler_TEXTBASE )
-            {
-                (<ATCMDHDL.AtCmdHandler_TEXTBASE>dataChHdlr).flushSendQ();
-            }
-            if( cmdChHdlr && cmdChHdlr instanceof ATCMDHDL.AtCmdHandler_TEXTBASE )
-            {
-                (<ATCMDHDL.AtCmdHandler_TEXTBASE>cmdChHdlr).flushSendQ();
-            }
-
-            this.dx.disconnect(uuid).then( ret => {
-                resolve(ret);
-            }).catch( ret => {
-                //devInfo.connecting = false;
-                //devInfo.connected = false;
-                devInfo.state = DevState.IDLE;
-                devInfo.clearConnectTimer(); 
-                reject(ret);       
+        if( devInfo.state != DevState.CONNECTED )
+        {
+            return new Promise((resolve, reject) => {
+                reject({"retCode":-2,"status":"device is not in connected state"});
             });
-        });
+        }
+        
+        devInfo.state = DevState.DISCONNECTING;
+
+        return this._disconnect(devInfo);
     }
 
     recoverStaleDisconnect(uuid : string)
@@ -463,9 +464,9 @@ export class AtCmdDispatcherService {
         devInfo.clearConnectTimer(); 
     }
 
-    upgradeFirmware(uuid : string, firmCode : string, firmBin : ArrayBuffer, firmName : string, success : (obj) => void, failure : (obj) => void, progress : (obj) => void)
+    upgradeFirmware(uuid : string, firmCode : string, firmSlot : number, firmBin : ArrayBuffer, firmName : string, forcePrime : boolean, success : (obj) => void, failure : (obj) => void, progress : (obj) => void)
     {
-        this.dx.primeDxFirmware(uuid, firmCode, firmBin, firmName, success, failure, progress);
+        this.dx.primeDxFirmware(uuid, firmCode, firmSlot, firmBin, firmName, forcePrime, success, failure, progress);
     }
 
     abortFirmware(uuid : string, firmCode : string) : Promise<any>
@@ -648,7 +649,10 @@ export class AtCmdDispatcherService {
                 //devInfo.connected = false;
                 console.log("[DISPATCHER] " + obj.info.UUID + " forced disconnected [2] state=" + devInfo.state + (isLinked ?" linked" :"unlink"));
                 // console.log( devInfo );
-                this.disconnect(devInfo.uuid);
+                
+                // Force disconnection
+                this._disconnect(devInfo, devInfo.state == DevState.CONNECTED ?false :true);
+                
                 devInfo.state = DevState.IDLE;
                 devInfo.clearConnectTimer();
 
@@ -711,54 +715,8 @@ export class AtCmdDispatcherService {
                     return;
                 }
             }
-            
-            //var wasConnected = devInfo.connected;
-            var wasConnected = devInfo.state == DevState.CONNECTED;
 
-            //devInfo.connected = false;
-            //devInfo.connecting = false;
-            devInfo.state = DevState.IDLE;
-            devInfo.cmdChHandler = null;
-            devInfo.dataChHandler = null;
-            devInfo.connectedEndDate = new Date; 
-            devInfo.clearConnectTimer();
-
-            // Don't generation notification if it was not connected
-            if( wasConnected )
-            {
-                console.log("[DISPATCHER] removing AT-CMD handlers for [" + devInfo.uuid + "] ... ");
-
-                var cmdH : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
-                var dataH : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
-                if( !cmdH )
-                {
-                    // Something wrong here
-                    // - FIXME: special handling??                    
-                }
-                else 
-                {
-                    // Notify handler the device is now disconnected
-                    cmdH.notifyDisconnected();
-                    delete this.cmdChHandlerList[devInfo.uuid];
-                }
-                if( !dataH )
-                {
-
-                    // Something wrong here
-                    // - FIXME: special handling??                    
-                }
-                else 
-                {
-                    // Notify handler the device is now disconnected
-                    dataH.notifyDisconnected();
-                    delete this.dataChHandlerList[devInfo.uuid];
-                }
-            }
-            else
-            {
-                // This is where the android (not iOS) device will land here
-                devInfo.promiseReject({"retCode":-5,"status":"attempt but not successful"});    
-            }
+            this.generateNotificationIfNeeded(devInfo);            
         }
         else
         {
@@ -985,6 +943,11 @@ export class AtCmdDispatcherService {
             }
         }
 
+        if( devInfo.state != DevState.CONNECTED )
+        {
+            return;
+        }
+
         var cmdH : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
         var dataH : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
 
@@ -999,8 +962,89 @@ export class AtCmdDispatcherService {
         }
 
         this.disconnect(uuid).then( obj => {
+            console.log("[DISPATCHER] terminate request sent successful");
         }).catch( obj => {
+            console.log("[DISPATCHER] terminate request sent failed");
         });
+    }
+
+    private _disconnect(devInfo : BtDeviceInfo, suppressNoti : boolean = false)
+    {
+        return new Promise((resolve, reject) => {
+            // Flush the queues of ATCMD handler
+            var cmdChHdlr = this.getCmdChHandler(devInfo.uuid);
+            var dataChHdlr = this.getDataChHandler(devInfo.uuid);
+
+            if( dataChHdlr && dataChHdlr instanceof ATCMDHDL.AtCmdHandler_TEXTBASE )
+            {
+                (<ATCMDHDL.AtCmdHandler_TEXTBASE>dataChHdlr).flushSendQ();
+            }
+            if( cmdChHdlr && cmdChHdlr instanceof ATCMDHDL.AtCmdHandler_TEXTBASE )
+            {
+                (<ATCMDHDL.AtCmdHandler_TEXTBASE>cmdChHdlr).flushSendQ();
+            }
+
+            this.dx.disconnect(devInfo.uuid).then( ret => {
+                resolve(ret);
+            }).catch( ret => {
+                if( !suppressNoti )
+                {
+                    this.generateNotificationIfNeeded(devInfo);            
+                }
+                reject(ret);       
+            });
+        });
+    }
+
+    private generateNotificationIfNeeded(devInfo : BtDeviceInfo)
+    {
+        // Don't generation notification if it was not connected or disconnecting
+        var shouldGenerateNotification = devInfo.state == DevState.CONNECTED || devInfo.state == DevState.DISCONNECTING;
+        var wasConnecting = devInfo.state == DevState.CONNECTING;
+
+        //devInfo.connected = false;
+        //devInfo.connecting = false;
+        devInfo.state = DevState.IDLE;
+        devInfo.cmdChHandler = null;
+        devInfo.dataChHandler = null;
+        devInfo.connectedEndDate = new Date; 
+        devInfo.clearConnectTimer();
+
+        if( shouldGenerateNotification )
+        {
+            console.log("[DISPATCHER] removing AT-CMD handlers for [" + devInfo.uuid + "] ... ");
+
+            var cmdH : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
+            var dataH : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
+            if( !cmdH )
+            {
+                // Something wrong here
+                // - FIXME: special handling??                    
+            }
+            else 
+            {
+                // Notify handler the device is now disconnected
+                cmdH.notifyDisconnected();
+                delete this.cmdChHandlerList[devInfo.uuid];
+            }
+            if( !dataH )
+            {
+
+                // Something wrong here
+                // - FIXME: special handling??                    
+            }
+            else 
+            {
+                // Notify handler the device is now disconnected
+                dataH.notifyDisconnected();
+                delete this.dataChHandlerList[devInfo.uuid];
+            }
+        }
+        else if( wasConnecting )
+        {
+            // This is where the android (not iOS) device will land here
+            devInfo.promiseReject({"retCode":-5,"status":"attempt but not successful"});    
+        }
     }
 
     //
