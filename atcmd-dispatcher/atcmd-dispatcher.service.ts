@@ -281,6 +281,12 @@ export class AtCmdDispatcherService {
         // Clear the unlink list 1st
         this.btDevUnlinkList = <BtDeviceInfoMap>{};
 
+        // Mark the devInfo as inactive in linked list
+        Object.values(this.btDevLinkedList).map(devInfo => {
+            devInfo.active = false;
+            devInfo.rssi = -127;
+        });
+
         // We don't need to touch the linked list 
         // - as the list is persistent
         if( this.state != SysState.syson )
@@ -546,6 +552,7 @@ export class AtCmdDispatcherService {
                 var newDevInfo : BtDeviceInfo = GLOBAL.DevInfo.createInstance();
                 newDevInfo.name = obj.info.NAME;
                 newDevInfo.uuid = obj.info.UUID;
+                newDevInfo.suuid = (obj.info.SUUID ?obj.info.SUUID :"Unknown");
                 newDevInfo.rssi = obj.info.RSSI;
                 newDevInfo.mfg = obj.info.MFG;
                 newDevInfo.active = true;
@@ -559,6 +566,7 @@ export class AtCmdDispatcherService {
                 devInfo.name = obj.info.NAME;
                 devInfo.rssi = obj.info.RSSI;
                 devInfo.mfg = obj.info.MFG;
+                devInfo.suuid = (obj.info.SUUID ?obj.info.SUUID :"Unknown");
                 this.scanSuccessCb(obj);
             }
         }

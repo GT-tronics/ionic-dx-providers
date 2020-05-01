@@ -56,6 +56,9 @@ export class BtDeviceInfo {
     public customInfo : any;
     public scratchPad : any;
     public noTermination : boolean;
+    public imgSrc : string;
+    public activeTimer : any;
+    public suuid : string;
 
     public dataChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
     public cmdChHandler : ATCMDHDLCOMMON.AtCmdHandler_COMMON = null;
@@ -91,6 +94,8 @@ export class BtDeviceInfo {
         };
         this.customInfo = null;
         this.noTermination = false;
+        this.imgSrc = "";
+        this.activeTimer = null;
     }
 
     clearConnectTimer()

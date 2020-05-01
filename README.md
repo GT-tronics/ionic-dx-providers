@@ -1,6 +1,10 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+# V5 R4
+* added a few placeholder variables in BtDevInfo
+* clear rssi of linked devices when start scanning
+
 # V5 R3
 * merged with ionic-dx-providers-private ionic-v4 R30
 
