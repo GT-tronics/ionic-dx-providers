@@ -280,6 +280,12 @@ export class AtCmdDispatcherService {
         // Clear the unlink list 1st
         this.btDevUnlinkList = <BtDeviceInfoMap>{};
 
+        // Mark the devInfo as inactive in linked list
+        Object.values(this.btDevLinkedList).map(devInfo => {
+            devInfo.active = false;
+            devInfo.rssi = -127;
+        });
+
         // We don't need to touch the linked list 
         // - as the list is persistent
         if( this.state != SysState.syson )
@@ -545,6 +551,7 @@ export class AtCmdDispatcherService {
                 var newDevInfo : BtDeviceInfo = GLOBAL.DevInfo.createInstance();
                 newDevInfo.name = obj.info.NAME;
                 newDevInfo.uuid = obj.info.UUID;
+                newDevInfo.suuid = (obj.info.SUUID ?obj.info.SUUID :"Unknown");
                 newDevInfo.rssi = obj.info.RSSI;
                 newDevInfo.mfg = obj.info.MFG;
                 newDevInfo.active = true;
@@ -558,6 +565,7 @@ export class AtCmdDispatcherService {
                 devInfo.name = obj.info.NAME;
                 devInfo.rssi = obj.info.RSSI;
                 devInfo.mfg = obj.info.MFG;
+                devInfo.suuid = (obj.info.SUUID ?obj.info.SUUID :"Unknown");
                 this.scanSuccessCb(obj);
             }
         }
@@ -582,7 +590,7 @@ export class AtCmdDispatcherService {
         var cmdChHandler : ATCMDHDL.AtCmdHandler = this.cmdChHandlerList[devInfo.uuid];
         if( !cmdChHandler )
         {
-            cmdChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_CMD(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxCmd.bind(this), this.upgradeCmdChHandler.bind(this), this.terminateConnection.bind(this));
+            cmdChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_CMD(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxCmd.bind(this), this.upgradeCmdChHandler.bind(this), (devInfo.noTermination ?null :this.terminateConnection.bind(this)));
             this.cmdChHandlerList[devInfo.uuid] = cmdChHandler
         }
         else
@@ -601,7 +609,7 @@ export class AtCmdDispatcherService {
             var dataChHandler : ATCMDHDL.AtCmdHandler = this.dataChHandlerList[devInfo.uuid];
             if( !dataChHandler )
             {
-                dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), this.terminateConnection.bind(this));
+                dataChHandler = new ATCMDHDLNULL.AtCmdHandler_NULL_DATA(devInfo.uuid, devInfo.pinCode, this.events, this.dx, this.sendDxData.bind(this), this.upgradeDataChHandler.bind(this), (devInfo.noTermination ?null :this.terminateConnection.bind(this)));
                 this.dataChHandlerList[devInfo.uuid] = dataChHandler
             }
             else
@@ -820,7 +828,12 @@ export class AtCmdDispatcherService {
         // }
         // newHandler.constructor.apply(newHandler, devInfo.uuid, className, this.sendDxData.bind(this));
         var newHandler = ATCMDHDL.AtCmdHandler.createSubClassInstance(className, devInfo.uuid, className, this.sendDxData.bind(this), this.events);
-        this.dataChHandlerList[uuid] = newHandler;
+        if( newHandler )
+        {
+            this.dataChHandlerList[uuid] = newHandler;
+            handler = newHandler;
+        }
+
 
         // Bind handler to devInfo
         var devInfo = this.btDevLinkedList[uuid];
@@ -841,14 +854,19 @@ export class AtCmdDispatcherService {
         }
         if( devInfo )
         {
-            devInfo.dataChHandler = <ATCMDHDLCOMMON.AtCmdHandler_COMMON>newHandler;
+            devInfo.dataChHandler = <ATCMDHDLCOMMON.AtCmdHandler_COMMON>handler;
             setTimeout( () => {
                 devInfo.updateDataChannelRemoteDeviceGeneralInfo();
             }, 2000);
         }
 
-        newHandler.notifyConnected();
-        return true;
+        if( newHandler )
+        {
+            newHandler.notifyConnected();
+            return true;
+        }
+
+        return false;
     }
 
     private upgradeCmdChHandler(uuid : string, className : string) : boolean
@@ -887,7 +905,11 @@ export class AtCmdDispatcherService {
         // }
         // newHandler.constructor.apply(newHandler, [devInfo.uuid, className, this.sendDxCmd.bind(this)]);
         var newHandler = ATCMDHDL.AtCmdHandler.createSubClassInstance(className, devInfo.uuid, className, this.sendDxCmd.bind(this), this.events);
-        this.cmdChHandlerList[uuid] = newHandler;
+        if( newHandler )
+        {
+            this.cmdChHandlerList[uuid] = newHandler;
+            handler = newHandler;
+        }
 
         // Bind handler to devInfo
         var devInfo = this.btDevLinkedList[uuid];
@@ -908,14 +930,19 @@ export class AtCmdDispatcherService {
         }
         if( devInfo )
         {
-            devInfo.cmdChHandler = <ATCMDHDLCOMMON.AtCmdHandler_COMMON>newHandler;
+            devInfo.cmdChHandler = <ATCMDHDLCOMMON.AtCmdHandler_COMMON>handler;
             setTimeout( () => {
                 devInfo.updateCommandChannelRemoteDeviceGeneralInfo();
             }, 2000);
         }
 
-        newHandler.notifyConnected();
-        return true;
+        if( newHandler )
+        {
+            newHandler.notifyConnected();
+            return true;
+        }
+
+        return false;
     }
 
     private terminateConnection(uuid : string, info : any)

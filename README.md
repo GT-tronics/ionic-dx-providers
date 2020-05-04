@@ -1,6 +1,13 @@
 # ionic-dx-providers
 Ionic DataExchanger Provider Submodule
 
+# V4 R13
+* cherry-pick [0c60a0b](https://github.com/GT-tronics/ionic-dx-providers/commit/0c60a0b99d71fcb827b1d3ebefdb52066b2c3bc3) 
+    * added the support of AtCmdHandler_NULL handler being instantiated as standalone
+* cherry-pick [5ad69e8](https://github.com/GT-tronics/ionic-dx-providers/commit/5ad69e8b9ae41b61092ceed67bec29a2b8480450)
+    * added a few placeholder variables in BtDevInfo
+    * clear rssi of linked devices when start scanning
+
 # V4 R12
 * merged with ionic-dx-providers-private ionic-v4 R30
 
